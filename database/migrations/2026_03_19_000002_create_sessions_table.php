@@ -51,8 +51,6 @@ return new class extends Migration
 
             $table->unsignedSmallInteger('screen_width')->nullable();
 
-            $table->timestamps();
-
             $table->index(['site_id', 'started_at']);
             $table->index(['site_id', 'channel']);
             $table->index(['site_id', 'country_code']);

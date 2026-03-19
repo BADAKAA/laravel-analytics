@@ -10,6 +10,8 @@ class Pageview extends Model
 {
     use HasFactory;
 
+    public $timestamps = false;
+
     protected $fillable = [
         'site_id',
         'session_id',
