@@ -12,9 +12,16 @@ use Illuminate\Http\Request;
 
 class ApiController extends Controller
 {
+    private array $timings = [];
+    private bool $trackTiming = false;
+
     public function __invoke(Request $request): JsonResponse
     {
+        $requestTime = microtime(true);
+        $this->trackTiming = $request->header('X-Benchmark') === 'true';
+
         // Validate incoming pageview data
+        $t1 = microtime(true);
         $validated = $request->validate([
             'domain' => 'required|string|max:255',
             'pathname' => 'required|string|max:2048',
@@ -27,9 +34,12 @@ class ApiController extends Controller
             'utm_term' => 'nullable|string|max:255',
             'screen_width' => 'nullable|integer|min:100|max:7680',
         ]);
+        $this->recordTiming('validation', $t1);
 
         // Find site by domain
+        $t2 = microtime(true);
         $site = Site::where('domain', $validated['domain'])->first();
+        $this->recordTiming('site_lookup', $t2);
 
         if (!$site) {
             return response()->json(['error' => 'Site not found'], 404);
@@ -39,19 +49,29 @@ class ApiController extends Controller
         $ip = $request->ip() ?? '';
         $userAgent = $request->header('User-Agent') ?? '';
 
+        $t3 = microtime(true);
         $visitorId = VisitorHash::make($ip, $userAgent, $site->domain);
+        $this->recordTiming('visitor_hash', $t3);
 
         // Parse user agent for browser/OS/device info
+        $t4 = microtime(true);
         $browserInfo = $this->parseBrowserInfo($userAgent);
+        $this->recordTiming('parse_browser', $t4);
+
+        $t5 = microtime(true);
         $deviceInfo = $this->parseDeviceInfo($validated['screen_width'] ?? null);
+        $this->recordTiming('parse_device', $t5);
 
         // Extract referrer domain
+        $t6 = microtime(true);
         $referrerDomain = null;
         if ($validated['referrer'] ?? null) {
             $referrerDomain = parse_url($validated['referrer'], PHP_URL_HOST);
         }
+        $this->recordTiming('parse_referrer', $t6);
 
         // Classify traffic channel
+        $t7 = microtime(true);
         $channelClassifier = app(ChannelClassifier::class);
         $channel = $channelClassifier->classify(
             $validated['utm_source'] ?? null,
@@ -59,17 +79,23 @@ class ApiController extends Controller
             $validated['utm_campaign'] ?? null,
             $referrerDomain,
         );
+        $this->recordTiming('classify_channel', $t7);
 
         // Get geolocation data (if available)
+        $t8 = microtime(true);
         $geoData = $this->getGeoData($ip);
+        $this->recordTiming('geoip_lookup', $t8);
 
         // Find or create session (created in same day)
+        $t9 = microtime(true);
         $session = Session::where('site_id', $site->id)
             ->where('visitor_id', $visitorId)
             ->whereDate('started_at', today($site->timezone))
             ->latest('started_at')
             ->first();
+        $this->recordTiming('session_lookup', $t9);
 
+        $t10 = microtime(true);
         if (!$session) {
             // Create new session
             $session = Session::create([
@@ -111,11 +137,15 @@ class ApiController extends Controller
                 'duration' => $duration,
             ]);
         }
+        $this->recordTiming('session_upsert', $t10);
 
+        $t11 = microtime(true);
         Pageview::where('session_id', $session->id)
             ->where('is_exit', true)
             ->update(['is_exit' => false]);
+        $this->recordTiming('update_exit_flags', $t11);
 
+        $t12 = microtime(true);
         $pageview = Pageview::create([
             'site_id' => $site->id,
             'session_id' => $session->id,
@@ -125,11 +155,28 @@ class ApiController extends Controller
             'is_entry' => $session->pageviews === 1,
             'is_exit' => true,
         ]);
+        $this->recordTiming('create_pageview', $t12);
 
-        return response()->json([
+        $this->recordTiming('total', $requestTime);
+
+        $response = response()->json([
             'session_id' => $session->id,
             'pageview_id' => $pageview->id,
         ]);
+
+        if ($this->trackTiming) {
+            $response->header('X-Timing-Breakdown', json_encode($this->timings));
+        }
+
+        return $response;
+    }
+
+    private function recordTiming(string $operation, float $startTime): void
+    {
+        if ($this->trackTiming) {
+            $duration = (microtime(true) - $startTime) * 1000; // ms
+            $this->timings[$operation] = $duration;
+        }
     }
 
     /**
