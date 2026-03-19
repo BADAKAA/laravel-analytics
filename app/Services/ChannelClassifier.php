@@ -7,24 +7,22 @@ use App\Enums\Channel;
 class ChannelClassifier
 {
     private const SEARCH_ENGINES = [
-        'google.com', 'bing.com', 'duckduckgo.com', 'yahoo.com', 'baidu.com',
-        'yandex.ru', 'ecosia.org', 'startpage.com', 'brave.com',
-        'chatgpt.com', 'perplexity.ai', 'phind.com',
+        'google', 'bing', 'duckduckgo', 'yahoo', 'baidu', 'yandex',
+        'ecosia', 'startpage', 'brave', 'chatgpt', 'perplexity', 'phind',
     ];
 
     private const SOCIAL_NETWORKS = [
-        'facebook.com', 'twitter.com', 'x.com', 'linkedin.com', 'reddit.com',
-        'instagram.com', 'tiktok.com', 'youtube.com', 'pinterest.com',
-        'snapchat.com', 'discord.com', 'whatsapp.com', 'telegram.org',
-        'mastodon.social', 'threads.net', 'bluesky.app',
+        'facebook', 'twitter', 'x', 'linkedin', 'reddit',
+        'instagram', 'tiktok', 'youtube', 'pinterest', 'snapchat', 'discord',
+        'whatsapp', 'telegram', 'mastodon', 'threads', 'bluesky',
     ];
 
     private const SHOPPING_SITES = [
-        'amazon.com', 'ebay.com', 'etsy.com', 'shopify.com', 'temu.com',
+        'amazon', 'ebay', 'etsy', 'shopify', 'temu',
     ];
 
     private const VIDEO_SITES = [
-        'youtube.com', 'vimeo.com', 'twitch.tv', 'dailymotion.com',
+        'youtube', 'vimeo', 'twitch', 'dailymotion',
     ];
 
     private const EMAIL_SOURCES = ['gmail', 'email', 'e-mail', 'e_mail', 'e mail'];
@@ -38,10 +36,10 @@ class ChannelClassifier
         bool $hasGclid = false,
         bool $hasMsclkid = false,
     ): Channel {
-        $src = strtolower($source ?? '');
+        $src = $this->normalizeDomain(strtolower($source ?? ''));
         $med = strtolower($medium ?? '');
         $cam = strtolower($campaign ?? '');
-        $ref = strtolower($referrerDomain ?? '');
+        $ref = $this->normalizeDomain(strtolower($referrerDomain ?? ''));
 
         if (! $src && ! $med && ! $ref) {
             return Channel::Direct;
@@ -129,5 +127,23 @@ class ChannelClassifier
         }
 
         return Channel::Unknown;
+    }
+
+    /**
+     * Normalize domain by removing www prefix and extracting the main domain name.
+     * Examples:
+     *   'google.com' → 'google'
+     *   'www.google.com' → 'google'
+     *   'mail.google.com' → 'google'
+     *   'google' → 'google'
+     */
+    private function normalizeDomain(string $domain): string
+    {
+        if (!$domain) return '';
+        $domain = preg_replace('/^www\./', '', $domain);
+        $parts = explode('.', $domain);
+        // If we have a TLD (2+ parts), return the domain name (second-to-last part)
+        if (count($parts) >= 2) return $parts[count($parts) - 2];
+        return $domain;
     }
 }

@@ -1,7 +1,10 @@
 <?php
 
+use App\Http\Controllers\ApiController;
 use Illuminate\Support\Facades\Route;
 use Laravel\Fortify\Features;
+
+Route::post('/api/pageview', ApiController::class)->name('pageview');
 
 Route::inertia('/', 'Welcome', [
     'canRegister' => Features::enabled(Features::registration()),
