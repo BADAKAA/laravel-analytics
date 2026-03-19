@@ -112,12 +112,10 @@ class ApiController extends Controller
             ]);
         }
 
-        // Mark previous pageview (if exists) as non-exit
         Pageview::where('session_id', $session->id)
             ->where('is_exit', true)
             ->update(['is_exit' => false]);
 
-        // Create pageview
         $pageview = Pageview::create([
             'site_id' => $site->id,
             'session_id' => $session->id,
