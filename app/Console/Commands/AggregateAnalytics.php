@@ -3,7 +3,6 @@
 namespace App\Console\Commands;
 
 use App\Models\DailyStat;
-use App\Models\Pageview;
 use App\Models\Session;
 use App\Models\Site;
 use Illuminate\Console\Command;
@@ -33,9 +32,6 @@ class AggregateAnalytics extends Command
     {
         $sessQ = fn () => Session::where('site_id', $site->id)
             ->whereDate('started_at', $date);
-
-        $pvQ = fn () => Pageview::where('site_id', $site->id)
-            ->whereDate('viewed_at', $date);
 
         $visits = $sessQ()->count();
         $visitors = $sessQ()->distinct('visitor_id')->count('visitor_id');
@@ -143,9 +139,9 @@ class AggregateAnalytics extends Command
             ])
             ->toArray();
 
-        $topPagesAgg = $pvQ()
-            ->groupBy('pathname')
-            ->select('pathname', DB::raw('COUNT(*) as pageviews'), DB::raw('COUNT(DISTINCT session_id) as visitors'))
+        $topPagesAgg = $sessQ()
+            ->selectRaw('entry_page as pathname, SUM(pageviews) as pageviews, COUNT(DISTINCT visitor_id) as visitors')
+            ->groupBy('entry_page')
             ->orderByDesc('pageviews')
             ->get()
             ->map(fn ($r) => ['key' => $r->pathname, 'pageviews' => (int) $r->pageviews, 'visitors' => (int) $r->visitors])
@@ -200,7 +196,6 @@ class AggregateAnalytics extends Command
         );
 
         if ($this->option('prune')) {
-            Pageview::where('site_id', $site->id)->whereDate('viewed_at', $date)->delete();
             Session::where('site_id', $site->id)->whereDate('started_at', $date)->delete();
         }
     }

@@ -17,19 +17,12 @@ test('POST /api/pageview creates session and pageview', function () {
     ]);
 
     $response->assertStatus(200);
-    $response->assertJsonStructure(['session_id', 'pageview_id']);
+    $response->assertJsonStructure(['session_id']);
 
     // Verify session created
     expect(
         \App\Models\Session::where('site_id', $site->id)
             ->where('entry_page', '/home')
-            ->exists()
-    )->toBeTrue();
-
-    // Verify pageview created
-    expect(
-        \App\Models\Pageview::where('site_id', $site->id)
-            ->where('pathname', '/home')
             ->exists()
     )->toBeTrue();
 });

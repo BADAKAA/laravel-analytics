@@ -22,7 +22,7 @@ describe('Analytics API Endpoint', function () {
         ]);
 
         $response->assertStatus(200);
-        $response->assertJsonStructure(['session_id', 'pageview_id']);
+        $response->assertJsonStructure(['session_id']);
 
         $this->assertDatabaseHas('sessions', [
             'site_id' => $this->site->id,
@@ -32,12 +32,6 @@ describe('Analytics API Endpoint', function () {
             'exit_page' => '/home',
         ]);
 
-        $this->assertDatabaseHas('pageviews', [
-            'site_id' => $this->site->id,
-            'pathname' => '/home',
-            'is_entry' => true,
-            'is_exit' => true,
-        ]);
     });
 
     test('can update session on subsequent pageview', function () {
@@ -64,21 +58,6 @@ describe('Analytics API Endpoint', function () {
         $this->assertEquals(2, $session->pageviews);
         $this->assertEquals('/about', $session->exit_page);
         $this->assertFalse($session->is_bounce);
-
-        // Pageviews should be created
-        $this->assertDatabaseHas('pageviews', [
-            'session_id' => $sessionId,
-            'pathname' => '/home',
-            'is_entry' => true,
-            'is_exit' => false,
-        ]);
-
-        $this->assertDatabaseHas('pageviews', [
-            'session_id' => $sessionId,
-            'pathname' => '/about',
-            'is_entry' => false,
-            'is_exit' => true,
-        ]);
     });
 
     test('fails if site domain not found', function () {

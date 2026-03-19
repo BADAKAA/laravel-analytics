@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers;
 
-use App\Models\Pageview;
 use App\Models\Session;
 use App\Models\Site;
 use App\Services\ChannelClassifier;
@@ -139,29 +138,10 @@ class ApiController extends Controller
         }
         $this->recordTiming('session_upsert', $t10);
 
-        $t11 = microtime(true);
-        Pageview::where('session_id', $session->id)
-            ->where('is_exit', true)
-            ->update(['is_exit' => false]);
-        $this->recordTiming('update_exit_flags', $t11);
-
-        $t12 = microtime(true);
-        $pageview = Pageview::create([
-            'site_id' => $site->id,
-            'session_id' => $session->id,
-            'hostname' => $validated['hostname'] ?? $validated['domain'],
-            'pathname' => $validated['pathname'],
-            'viewed_at' => now($site->timezone),
-            'is_entry' => $session->pageviews === 1,
-            'is_exit' => true,
-        ]);
-        $this->recordTiming('create_pageview', $t12);
-
         $this->recordTiming('total', $requestTime);
 
         $response = response()->json([
             'session_id' => $session->id,
-            'pageview_id' => $pageview->id,
         ]);
 
         if ($this->trackTiming) {

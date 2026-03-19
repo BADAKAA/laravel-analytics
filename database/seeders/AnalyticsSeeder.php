@@ -3,7 +3,6 @@
 namespace Database\Seeders;
 
 use App\Enums\DeviceType;
-use App\Models\Pageview;
 use App\Models\Session;
 use App\Models\Site;
 use App\Services\ChannelClassifier;
@@ -105,7 +104,6 @@ class AnalyticsSeeder extends Seeder
         for ($i = 0; $i < $days; $i++) {
             $date = $startDate->copy()->addDays($i);
             $sessionCount = rand(20, 100);
-            $pageviewsToInsert = [];
 
             for ($s = 0; $s < $sessionCount; $s++) {
                 $traffic = $this->weightedRandom($trafficSources);
@@ -160,7 +158,7 @@ class AnalyticsSeeder extends Seeder
                     $exitPage = $page;
                 }
 
-                $session = Session::create([
+                Session::create([
                     'site_id' => $site->id,
                     'visitor_id' => $visitorId,
                     'started_at' => $sessionTime,
@@ -187,24 +185,7 @@ class AnalyticsSeeder extends Seeder
                     'device_type' => $device['type'],
                     'screen_width' => $screenWidth,
                 ]);
-
-                // Create pageviews
-                for ($p = 0; $p < $pageviewCount; $p++) {
-                    $pageviewTime = $sessionTime->copy()->addSeconds(rand(0, max(1, $duration / max(1, $pageviewCount - 1))));
-
-                    $pageviewsToInsert[] = [
-                        'site_id' => $site->id,
-                        'session_id' => $session->id,
-                        'hostname' => $site->domain,
-                        'pathname' => $pages[$p],
-                        'viewed_at' => $pageviewTime,
-                        'is_entry' => $p === 0,
-                        'is_exit' => $p === $pageviewCount - 1,
-                    ];
-                }
             }
-
-            if (!empty($pageviewsToInsert)) Pageview::insert($pageviewsToInsert);
 
             $this->command->info("Generated sessions for {$date->format('Y-m-d')}");
         }

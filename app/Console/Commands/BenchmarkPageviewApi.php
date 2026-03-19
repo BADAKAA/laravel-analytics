@@ -35,7 +35,7 @@ class BenchmarkPageviewApi extends Command
         $operations = [
             'validation', 'site_lookup', 'visitor_hash', 'parse_browser',
             'parse_device', 'parse_referrer', 'classify_channel', 'geoip_lookup',
-            'session_lookup', 'session_upsert', 'update_exit_flags', 'create_pageview', 'total'
+            'session_lookup', 'session_upsert', 'total'
         ];
         foreach ($operations as $op) {
             $this->operationTimings[$op] = [];

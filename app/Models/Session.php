@@ -64,11 +64,6 @@ class Session extends Model
         return $this->belongsTo(Site::class);
     }
 
-    public function pageviews(): HasMany
-    {
-        return $this->hasMany(Pageview::class);
-    }
-
     public function customEvents(): HasMany
     {
         return $this->hasMany(CustomEvent::class);

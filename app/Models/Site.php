@@ -30,11 +30,6 @@ class Site extends Model
         return $this->hasMany(Session::class);
     }
 
-    public function pageviews(): HasMany
-    {
-        return $this->hasMany(Pageview::class);
-    }
-
     public function dailyStats(): HasMany
     {
         return $this->hasMany(DailyStat::class);
