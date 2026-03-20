@@ -25,7 +25,6 @@ class Session extends Model
     protected $fillable = [
         'site_id',
         'visitor_id',
-        'session_date',
         'started_at',
         'duration',
         'pageviews',
@@ -62,42 +61,10 @@ class Session extends Model
     }
 
     /**
-     * Upsert a session from pageview data in a single database query.
-     * Uses Laravel's Eloquent upsert() method for atomic insert-or-update.
-     */
-    public static function upsertFromPageview(
-        int $siteId,
-        string $visitorId,
-        string $timezone,
-        array $createData,
-        array $updateData
-    ): void {
-        $today = today($timezone);
-        
-        // Prepare data for upsert - including session_date for unique constraint
-        $upsertData = array_merge($createData, [
-            'session_date' => $today,
-        ]);
-
-        // Calculate duration for update
-        $startTime = strtotime($createData['started_at']);
-        $updateData['duration'] = max(0, now($timezone)->timestamp - $startTime);
-        $updateData['session_date'] = $today;
-
-        // Single upsert query: unique on (site_id, visitor_id, session_date)
-        // This will insert if not exists, or update if duplicate key found
-        self::upsert(
-            [$upsertData],
-            ['site_id', 'visitor_id', 'session_date'],
-            array_keys($updateData)
-        );
-    }
-
-    /**
      * Alternative: Upsert using updateOrCreate() - for benchmarking comparison.
      * This requires 2 queries: SELECT first, then INSERT or UPDATE.
      */
-    public static function upsertFromPageviewTwoQuery(
+    public static function upsertFromPageview(
         int $siteId,
         string $visitorId,
         string $timezone,
@@ -144,10 +111,23 @@ class Session extends Model
         $startTime = strtotime($createData['started_at']);
         $duration = max(0, now($timezone)->timestamp - $startTime);
 
+        // Convert all values to scalar types (handle enums, etc.)
+        $insertData = [];
+        foreach ($createData as $key => $value) {
+            // Convert backed enums to their backing value
+            if (is_object($value) && property_exists($value, 'value')) {
+                $insertData[$key] = $value->value;
+            } elseif (is_bool($value)) {
+                $insertData[$key] = (int) $value;
+            } else {
+                $insertData[$key] = $value;
+            }
+        }
+
         // Query 1: INSERT OR IGNORE (SQLite) or INSERT IGNORE (MySQL)
-        $insertColumns = implode(',', array_keys($createData));
-        $placeholders = implode(',', array_fill(0, count($createData), '?'));
-        $insertValues = array_values($createData);
+        $insertColumns = implode(',', array_keys($insertData));
+        $placeholders = implode(',', array_fill(0, count($insertData), '?'));
+        $insertValues = array_values($insertData);
         
         $driver = DB::getDriverName();
         $ignoreClause = $driver === 'sqlite' ? 'INSERT OR IGNORE' : 'INSERT IGNORE';
@@ -196,8 +176,8 @@ class Session extends Model
         // Convert all values to scalar types (handle enums, etc.)
         $insertData = [];
         foreach ($createData as $key => $value) {
-            // Convert enums to their backing value
-            if (is_object($value) && method_exists($value, 'value')) {
+            // Convert backed enums to their backing value
+            if (is_object($value) && property_exists($value, 'value')) {
                 $insertData[$key] = $value->value;
             } elseif (is_bool($value)) {
                 $insertData[$key] = (int) $value;
