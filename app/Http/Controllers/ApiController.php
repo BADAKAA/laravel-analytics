@@ -8,6 +8,7 @@ use App\Services\ChannelClassifier;
 use App\Services\VisitorHash;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 
 class ApiController extends Controller
 {
@@ -85,22 +86,17 @@ class ApiController extends Controller
         $geoData = $this->getGeoData($ip);
         $this->recordTiming('geoip_lookup', $t8);
 
-        // Find or create session (created in same day)
+        // Upsert session using single atomic query (Eloquent upsert)
         $t9 = microtime(true);
-        $session = Session::where('site_id', $site->id)
-            ->where('visitor_id', $visitorId)
-            ->whereDate('started_at', today($site->timezone))
-            ->latest('started_at')
-            ->first();
-        $this->recordTiming('session_lookup', $t9);
-
-        $t10 = microtime(true);
-        if (!$session) {
-            // Create new session
-            $session = Session::create([
+        $now = now($site->timezone);
+        Session::upsertFromPageview(
+            siteId: $site->id,
+            visitorId: $visitorId,
+            timezone: $site->timezone,
+            createData: [
                 'site_id' => $site->id,
                 'visitor_id' => $visitorId,
-                'started_at' => now($site->timezone),
+                'started_at' => $now->toDateTimeString(),
                 'duration' => null,
                 'pageviews' => 1,
                 'is_bounce' => true,
@@ -123,26 +119,18 @@ class ApiController extends Controller
                 'os_version' => $browserInfo['os_version'],
                 'device_type' => $deviceInfo['type'],
                 'screen_width' => $validated['screen_width'] ?? null,
-            ]);
-        } else {
-            // Update existing session: increment pageviews, update exit page, update duration
-            $sessionStarted = $session->started_at->timestamp;
-            $duration = max(0, now($site->timezone)->timestamp - $sessionStarted);
-
-            $session->update([
-                'pageviews' => $session->pageviews + 1,
+            ],
+            updateData: [
+                'pageviews' => DB::raw('pageviews + 1'),
                 'exit_page' => $validated['pathname'],
-                'is_bounce' => false, // Session has multiple pageviews
-                'duration' => $duration,
-            ]);
-        }
-        $this->recordTiming('session_upsert', $t10);
+                'is_bounce' => false,
+            ]
+        );
+        $this->recordTiming('session_upsert', $t9);
 
         $this->recordTiming('total', $requestTime);
 
-        $response = response()->json([
-            'session_id' => $session->id,
-        ]);
+        $response = response()->json([]);
 
         if ($this->trackTiming) {
             $response->header('X-Timing-Breakdown', json_encode($this->timings));
