@@ -11,7 +11,7 @@ test('debug api pageview endpoint', function () {
 
     // Send pageview request
     $response = $this->postJson('/api/pageview', [
-        'domain' => 'test.local',
+        'site_id' => $site->id,
         'pathname' => '/home',
         'screen_width' => 1920,
     ]);

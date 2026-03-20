@@ -15,7 +15,7 @@ describe('Analytics API Endpoint', function () {
 
     test('can create a new session on first pageview', function () {
         $response = $this->postJson('/api/pageview', [
-            'domain' => 'test.example.com',
+            'site_id' => $this->site->id,
             'pathname' => '/home',
             'hostname' => 'test.example.com',
             'screen_width' => 1920,
@@ -40,7 +40,7 @@ describe('Analytics API Endpoint', function () {
         $response1 = $this->postJson(
             '/api/pageview',
             [
-                'domain' => 'test.example.com',
+                'site_id' => $this->site->id,
                 'pathname' => '/home',
                 'screen_width' => 1920,
             ],
@@ -63,7 +63,7 @@ describe('Analytics API Endpoint', function () {
         $response2 = $this->postJson(
             '/api/pageview',
             [
-                'domain' => 'test.example.com',
+                'site_id' => $this->site->id,
                 'pathname' => '/about',
                 'screen_width' => 1920,
             ],
@@ -78,7 +78,7 @@ describe('Analytics API Endpoint', function () {
 
     test('fails if site domain not found', function () {
         $response = $this->postJson('/api/pageview', [
-            'domain' => 'unknown.example.com',
+            'site_id' => 99999, // Non-existent site ID
             'pathname' => '/home',
         ]);
 
@@ -88,7 +88,7 @@ describe('Analytics API Endpoint', function () {
 
     test('classifies traffic channel correctly', function () {
         $response = $this->postJson('/api/pageview', [
-            'domain' => 'test.example.com',
+            'site_id' => $this->site->id,
             'pathname' => '/home',
             'utm_source' => 'google',
             'utm_medium' => 'cpc',
@@ -110,7 +110,7 @@ describe('Analytics API Endpoint', function () {
         $response = $this->postJson(
             '/api/pageview',
             [
-                'domain' => 'test.example.com',
+                'site_id' => $this->site->id,
                 'pathname' => '/home',
             ],
             [
@@ -143,7 +143,7 @@ describe('Analytics API Endpoint', function () {
 
         // Mobile - test on first site
         $this->postJson('/api/pageview', [
-            'domain' => 'mobile.example.com',
+            'site_id' => $mobileSite->id,
             'pathname' => '/home',
             'screen_width' => 375,
         ]);
@@ -156,7 +156,7 @@ describe('Analytics API Endpoint', function () {
 
         // Desktop - test on second site (ensures different session)
         $this->postJson('/api/pageview', [
-            'domain' => 'desktop.example.com',
+            'site_id' => $desktopSite->id,
             'pathname' => '/about',
             'screen_width' => 1920,
         ]);

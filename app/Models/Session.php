@@ -67,15 +67,14 @@ class Session extends Model
     public static function upsertFromPageview(
         int $siteId,
         string $visitorId,
-        string $timezone,
         array $createData,
         array $updateData
     ): void {
-        $today = today($timezone);
+        $today = today();
 
         // Calculate duration for update
         $startTime = strtotime($createData['started_at']);
-        $updateData['duration'] = max(0, now($timezone)->timestamp - $startTime);
+        $updateData['duration'] = max(0, now()->timestamp - $startTime);
 
         // Query 1: SELECT * FROM sessions WHERE site_id=? AND visitor_id=? AND DATE(started_at)=?
         // Query 2: INSERT or UPDATE
@@ -103,124 +102,58 @@ class Session extends Model
     public static function upsertFromPageviewRawSQL(
         int $siteId,
         string $visitorId,
-        string $timezone,
         array $createData,
         array $updateData
     ): void {
-        $today = today($timezone);
+        $today = today();
         $startTime = strtotime($createData['started_at']);
-        $duration = max(0, now($timezone)->timestamp - $startTime);
+        $updateData['duration'] = max(0, now()->timestamp - $startTime);
 
-        // Convert all values to scalar types (handle enums, etc.)
-        $insertData = [];
-        foreach ($createData as $key => $value) {
-            // Convert backed enums to their backing value
-            if (is_object($value) && property_exists($value, 'value')) {
-                $insertData[$key] = $value->value;
-            } elseif (is_bool($value)) {
-                $insertData[$key] = (int) $value;
-            } else {
-                $insertData[$key] = $value;
+        // Query 1: Try to UPDATE existing session from today
+        // This will succeed if a session already exists, fail if it doesn't
+        $rowsUpdated = DB::table('sessions')
+            ->where('site_id', $siteId)
+            ->where('visitor_id', $visitorId)
+            ->whereDate('started_at', $today)
+            ->update([
+                'pageviews' => DB::raw('pageviews + 1'),
+                'exit_page' => $updateData['exit_page'] ?? $createData['exit_page'],
+                'is_bounce' => 0,
+                'duration' => $updateData['duration'],
+            ]);
+
+        // Query 2: Only insert if no rows were updated (session doesn't exist yet)
+        if ($rowsUpdated === 0) {
+            // Ensure 'id' field is present for UUID primary key
+            if (!isset($createData['id'])) {
+                $createData['id'] = \Illuminate\Support\Str::uuid()->toString();
+            }
+
+            // Convert all values to scalar types (handle enums, etc.)
+            $insertData = [];
+            foreach ($createData as $key => $value) {
+                // Convert backed enums to their backing value
+                if ($value instanceof \BackedEnum) {
+                    $insertData[$key] = $value->value;
+                } elseif (is_bool($value)) {
+                    $insertData[$key] = (int) $value;
+                } else {
+                    $insertData[$key] = $value;
+                }
+            }
+
+            try {
+                self::create($insertData);
+            } catch (\Illuminate\Database\QueryException $e) {
+                // Check if it's a foreign key error
+                if (str_contains($e->getMessage(), 'FOREIGN KEY') || str_contains($e->getMessage(), 'foreign key')) {
+                    throw $e;
+                }
+                // For other errors, log and re-throw
+                throw $e;
             }
         }
-
-        // Query 1: INSERT OR IGNORE (SQLite) or INSERT IGNORE (MySQL)
-        $insertColumns = implode(',', array_keys($insertData));
-        $placeholders = implode(',', array_fill(0, count($insertData), '?'));
-        $insertValues = array_values($insertData);
-        
-        $driver = DB::getDriverName();
-        $ignoreClause = $driver === 'sqlite' ? 'INSERT OR IGNORE' : 'INSERT IGNORE';
-
-        DB::statement(
-            "{$ignoreClause} INTO sessions ({$insertColumns}) VALUES ({$placeholders})",
-            $insertValues
-        );
-
-        // Query 2: UPDATE matching session from today
-        $updateSql = "UPDATE sessions 
-                     SET pageviews = pageviews + 1, 
-                         exit_page = ?,
-                         is_bounce = 0,
-                         duration = ?
-                     WHERE site_id = ? 
-                     AND visitor_id = ? 
-                     AND DATE(started_at) = ?";
-
-        DB::statement($updateSql, [
-            $updateData['exit_page'] ?? $createData['exit_page'],
-            $duration,
-            $siteId,
-            $visitorId,
-            $today->toDateString(),
-        ]);
     }
-
-    /**
-     * Upsert using INSERT...ON CONFLICT UPDATE (SQLite) or INSERT...ON DUPLICATE KEY UPDATE (MySQL).
-     * Single atomic query - the most optimized approach.
-     * Supports both SQLite and MySQL with driver-specific syntax.
-     * Properly converts Enum objects to their backing values for raw SQL.
-     */
-    public static function upsertFromPageviewRawSQLAtomic(
-        int $siteId,
-        string $visitorId,
-        string $timezone,
-        array $createData,
-        array $updateData
-    ): void {
-        $today = today($timezone);
-        $startTime = strtotime($createData['started_at']);
-        $duration = max(0, now($timezone)->timestamp - $startTime);
-
-        // Convert all values to scalar types (handle enums, etc.)
-        $insertData = [];
-        foreach ($createData as $key => $value) {
-            // Convert backed enums to their backing value
-            if (is_object($value) && property_exists($value, 'value')) {
-                $insertData[$key] = $value->value;
-            } elseif (is_bool($value)) {
-                $insertData[$key] = (int) $value;
-            } else {
-                $insertData[$key] = $value;
-            }
-        }
-
-        // Add session_date for unique constraint
-        $insertData['session_date'] = $today->toDateString();
-
-        // Build INSERT statement
-        $insertColumns = implode(',', array_keys($insertData));
-        $placeholders = implode(',', array_fill(0, count($insertData), '?'));
-        $insertValues = array_values($insertData);
-        
-        $driver = DB::getDriverName();
-        $exitPage = $updateData['exit_page'] ?? $createData['exit_page'];
-
-        if ($driver === 'sqlite') {
-            // SQLite: INSERT...ON CONFLICT(columns) DO UPDATE SET
-            $sql = "INSERT INTO sessions ({$insertColumns}) VALUES ({$placeholders})
-                    ON CONFLICT(site_id, visitor_id, session_date) DO UPDATE SET 
-                        pageviews = pageviews + 1,
-                        exit_page = ?,
-                        is_bounce = 0,
-                        duration = ?";
-            
-            DB::statement($sql, array_merge($insertValues, [$exitPage, $duration]));
-        } else {
-            // MySQL: INSERT...ON DUPLICATE KEY UPDATE
-            $sql = "INSERT INTO sessions ({$insertColumns}) VALUES ({$placeholders})
-                    ON DUPLICATE KEY UPDATE 
-                        pageviews = pageviews + 1,
-                        exit_page = ?,
-                        is_bounce = 0,
-                        duration = ?";
-            
-            DB::statement($sql, array_merge($insertValues, [$exitPage, $duration]));
-        }
-    }
-
-
 
     public function site(): BelongsTo
     {

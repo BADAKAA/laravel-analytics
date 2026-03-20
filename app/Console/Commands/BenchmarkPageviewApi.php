@@ -23,6 +23,7 @@ class BenchmarkPageviewApi extends Command
     private float $totalBytes = 0;
     private array $errors = [];
     private array $operationTimings = []; // Track timings per operation
+    private int $siteId = 0; // Store site ID once
 
     public function handle(): int
     {
@@ -35,7 +36,7 @@ class BenchmarkPageviewApi extends Command
         $operations = [
             'validation', 'site_lookup', 'visitor_hash', 'parse_browser',
             'parse_device', 'parse_referrer', 'classify_channel', 'geoip_lookup',
-            'session_lookup', 'session_upsert', 'total'
+            'session_lookup', 'session_upsert', 'update_exit_flags', 'create_pageview', 'total'
         ];
         foreach ($operations as $op) {
             $this->operationTimings[$op] = [];
@@ -47,6 +48,8 @@ class BenchmarkPageviewApi extends Command
             $this->error("Site with domain '{$domain}' not found.");
             return self::FAILURE;
         }
+
+        $this->siteId = $site->id;
 
         $this->info("🚀 Benchmarking Pageview API");
         $this->info("────────────────────────────");
@@ -61,7 +64,7 @@ class BenchmarkPageviewApi extends Command
         $batchSize = min($concurrency, $totalRequests);
         for ($i = 0; $i < $totalRequests; $i += $batchSize) {
             $batch = min($batchSize, $totalRequests - $i);
-            $this->sendBatch($batch, $site);
+            $this->sendBatch($batch);
             $this->display_progress($i + $batch, $totalRequests);
         }
 
@@ -77,12 +80,12 @@ class BenchmarkPageviewApi extends Command
         return self::SUCCESS;
     }
 
-    private function sendBatch(int $count, Site $site): void
+    private function sendBatch(int $count): void
     {
         $requests = [];
 
         for ($i = 0; $i < $count; $i++) {
-            $payload = $this->generatePayload($site->domain);
+            $payload = $this->generatePayload();
             $requests[] = $this->createBenchmarkRequest($payload);
         }
 
@@ -120,7 +123,7 @@ class BenchmarkPageviewApi extends Command
         }
     }
 
-    private function generatePayload(string $domain): array
+    private function generatePayload(): array
     {
         $pages = [
             '/',
@@ -138,9 +141,8 @@ class BenchmarkPageviewApi extends Command
         $screenWidths = [375, 768, 1024, 1440, 1920];
 
         return [
-            'domain' => $domain,
+            'site_id' => $this->siteId,
             'pathname' => $pages[array_rand($pages)],
-            'hostname' => $domain,
             'screen_width' => $screenWidths[array_rand($screenWidths)],
             'utm_source' => $utmSources[array_rand($utmSources)],
             'utm_medium' => $utmMediums[array_rand($utmMediums)],
@@ -181,7 +183,7 @@ class BenchmarkPageviewApi extends Command
         $percent = ($current / $total) * 100;
         $bar = str_repeat('=', (int) ($percent / 2));
         $this->line(sprintf(
-            "\r<fg=green>%s</>%-50s %d/%d (%.0f%%)",
+            "\r<fg=green>%s</>%s %d/%d (%.0f%%)",
             $bar,
             str_repeat(' ', 50 - strlen($bar)),
             $current,

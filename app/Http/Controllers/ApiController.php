@@ -23,7 +23,7 @@ class ApiController extends Controller
         // Validate incoming pageview data
         $t1 = microtime(true);
         $validated = $request->validate([
-            'domain' => 'required|string|max:255',
+            'site_id' => 'required|integer',
             'pathname' => 'required|string|max:2048',
             'hostname' => 'nullable|string|max:255',
             'referrer' => 'nullable|string|max:2048',
@@ -36,21 +36,12 @@ class ApiController extends Controller
         ]);
         $this->recordTiming('validation', $t1);
 
-        // Find site by domain
-        $t2 = microtime(true);
-        $site = Site::where('domain', $validated['domain'])->first();
-        $this->recordTiming('site_lookup', $t2);
-
-        if (!$site) {
-            return response()->json(['error' => 'Site not found'], 404);
-        }
-
         // Extract visitor hash, browser, OS, device type, and location
         $ip = $request->ip() ?? '';
         $userAgent = $request->header('User-Agent') ?? '';
 
         $t3 = microtime(true);
-        $visitorId = VisitorHash::make($ip, $userAgent, $site->domain);
+        $visitorId = VisitorHash::make($ip, $userAgent, (string)$validated['site_id']);
         $this->recordTiming('visitor_hash', $t3);
 
         // Parse user agent for browser/OS/device info
@@ -88,44 +79,54 @@ class ApiController extends Controller
 
         // Upsert session using single atomic query (Eloquent upsert)
         $t9 = microtime(true);
-        $now = now($site->timezone);
-        Session::upsertFromPageview(
-            siteId: $site->id,
-            visitorId: $visitorId,
-            timezone: $site->timezone,
-            createData: [
-                'site_id' => $site->id,
-                'visitor_id' => $visitorId,
-                'started_at' => $now->toDateTimeString(),
-                'duration' => null,
-                'pageviews' => 1,
-                'is_bounce' => true,
-                'entry_page' => $validated['pathname'],
-                'exit_page' => $validated['pathname'],
-                'utm_source' => $validated['utm_source'] ?? null,
-                'utm_medium' => $validated['utm_medium'] ?? null,
-                'utm_campaign' => $validated['utm_campaign'] ?? null,
-                'utm_content' => $validated['utm_content'] ?? null,
-                'utm_term' => $validated['utm_term'] ?? null,
-                'referrer' => $validated['referrer'] ?? null,
-                'referrer_domain' => $referrerDomain,
-                'channel' => $channel,
-                'country_code' => $geoData['country_code'] ?? null,
-                'subdivision_code' => $geoData['subdivision_code'] ?? null,
-                'city' => $geoData['city'] ?? null,
-                'browser' => $browserInfo['name'],
-                'browser_version' => $browserInfo['version'],
-                'os' => $browserInfo['os'],
-                'os_version' => $browserInfo['os_version'],
-                'device_type' => $deviceInfo['type'],
-                'screen_width' => $validated['screen_width'] ?? null,
-            ],
-            updateData: [
-                'pageviews' => DB::raw('pageviews + 1'),
-                'exit_page' => $validated['pathname'],
-                'is_bounce' => false,
-            ]
-        );
+        $now = now();
+        
+        try {
+            Session::upsertFromPageviewRawSQL(
+                siteId: $validated['site_id'],
+                visitorId: $visitorId,
+                createData: [
+                    'site_id' => $validated['site_id'],
+                    'visitor_id' => $visitorId,
+                    'started_at' => $now->toDateTimeString(),
+                    'duration' => null,
+                    'pageviews' => 1,
+                    'is_bounce' => true,
+                    'entry_page' => $validated['pathname'],
+                    'exit_page' => $validated['pathname'],
+                    'utm_source' => $validated['utm_source'] ?? null,
+                    'utm_medium' => $validated['utm_medium'] ?? null,
+                    'utm_campaign' => $validated['utm_campaign'] ?? null,
+                    'utm_content' => $validated['utm_content'] ?? null,
+                    'utm_term' => $validated['utm_term'] ?? null,
+                    'referrer' => $validated['referrer'] ?? null,
+                    'referrer_domain' => $referrerDomain,
+                    'channel' => $channel,
+                    'country_code' => $geoData['country_code'] ?? null,
+                    'subdivision_code' => $geoData['subdivision_code'] ?? null,
+                    'city' => $geoData['city'] ?? null,
+                    'browser' => $browserInfo['name'],
+                    'browser_version' => $browserInfo['version'],
+                    'os' => $browserInfo['os'],
+                    'os_version' => $browserInfo['os_version'],
+                    'device_type' => $deviceInfo['type'],
+                    'screen_width' => $validated['screen_width'] ?? null,
+                ],
+                updateData: [
+                    'pageviews' => DB::raw('pageviews + 1'),
+                    'exit_page' => $validated['pathname'],
+                    'is_bounce' => false,
+                ]
+            );
+        } catch (\Illuminate\Database\QueryException $e) {
+            // Return 404 if site ID doesn't exist (foreign key constraint failure)
+            if (str_contains($e->getMessage(), 'FOREIGN KEY') || str_contains($e->getMessage(), 'foreign key')) {
+                return response()->json(['error' => 'Site not found'], 404);
+            }
+            // Re-throw other database errors
+            throw $e;
+        }
+        
         $this->recordTiming('session_upsert', $t9);
 
         $this->recordTiming('total', $requestTime);
