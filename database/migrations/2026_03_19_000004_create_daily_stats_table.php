@@ -17,7 +17,6 @@ return new class extends Migration
             $table->date('date');
 
             $table->unsignedInteger('visitors')->default(0);
-            $table->unsignedInteger('visits')->default(0);
             $table->unsignedInteger('pageviews')->default(0);
             $table->decimal('views_per_visit', 6, 2)->nullable();
             $table->decimal('bounce_rate', 5, 2)->nullable();

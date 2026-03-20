@@ -33,14 +33,13 @@ class AggregateAnalytics extends Command
         $sessQ = fn () => Session::where('site_id', $site->id)
             ->whereDate('started_at', $date);
 
-        $visits = $sessQ()->count();
-        $visitors = $sessQ()->distinct('visitor_id')->count('visitor_id');
+        $visitors = $sessQ()->count();
         $pageviews = $sessQ()->sum('pageviews');
         $bounced = $sessQ()->where('is_bounce', true)->count();
 
         $avgDuration = (int) $sessQ()->whereNotNull('duration')->avg('duration');
-        $bounceRate = $visits > 0 ? round($bounced / $visits * 100, 2) : null;
-        $vpp = $visits > 0 ? round($pageviews / $visits, 2) : null;
+        $bounceRate = $visitors > 0 ? round($bounced / $visitors * 100, 2) : null;
+        $vpp = $visitors > 0 ? round($pageviews / $visitors, 2) : null;
 
         $agg = function (string $groupCol) use ($sessQ): array {
             return $sessQ()
@@ -48,18 +47,16 @@ class AggregateAnalytics extends Command
                 ->groupBy($groupCol)
                 ->select(
                     DB::raw("{$groupCol} as grp_key"),
-                    DB::raw('COUNT(DISTINCT visitor_id) as visitors'),
-                    DB::raw('COUNT(*) as visits'),
+                    DB::raw('COUNT(*) as visitors'),
                     DB::raw('SUM(pageviews) as pageviews'),
                     DB::raw('ROUND(AVG(CASE WHEN is_bounce THEN 100.0 ELSE 0 END), 1) as bounce_rate'),
                     DB::raw('ROUND(AVG(COALESCE(duration, 0)), 0) as avg_duration'),
                 )
-                ->orderByDesc('visits')
+                ->orderByDesc('visitors')
                 ->get()
                 ->map(fn ($r) => [
                     'key' => $r->grp_key,
                     'visitors' => (int) $r->visitors,
-                    'visits' => (int) $r->visits,
                     'pageviews' => (int) $r->pageviews,
                     'bounce_rate' => (float) $r->bounce_rate,
                     'avg_duration' => (int) $r->avg_duration,
@@ -71,71 +68,67 @@ class AggregateAnalytics extends Command
         $browsersAgg = $sessQ()
             ->whereNotNull('browser')
             ->groupBy('browser', 'browser_version')
-            ->select('browser', 'browser_version', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'))
-            ->orderByDesc('visits')
+            ->select('browser', 'browser_version', DB::raw('COUNT(*) as visitors'))
+            ->orderByDesc('visitors')
             ->get()
             ->groupBy('browser')
             ->map(fn ($rows, $browser) => [
                 'key' => $browser,
                 'visitors' => (int) $rows->sum('visitors'),
-                'visits' => (int) $rows->sum('visits'),
                 'versions' => $rows
                     ->sortByDesc('visitors')
                     ->map(fn ($r) => ['key' => $r->browser_version, 'visitors' => (int) $r->visitors])
                     ->values()
                     ->toArray(),
             ])
-            ->sortByDesc('visits')
+            ->sortByDesc('visitors')
             ->values()
             ->toArray();
 
         $osAgg = $sessQ()
             ->whereNotNull('os')
             ->groupBy('os', 'os_version')
-            ->select('os', 'os_version', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'))
-            ->orderByDesc('visits')
+            ->select('os', 'os_version', DB::raw('COUNT(*) as visitors'))
+            ->orderByDesc('visitors')
             ->get()
             ->groupBy('os')
             ->map(fn ($rows, $os) => [
                 'key' => $os,
                 'visitors' => (int) $rows->sum('visitors'),
-                'visits' => (int) $rows->sum('visits'),
                 'versions' => $rows
                     ->sortByDesc('visitors')
                     ->map(fn ($r) => ['key' => $r->os_version, 'visitors' => (int) $r->visitors])
                     ->values()
                     ->toArray(),
             ])
-            ->sortByDesc('visits')
+            ->sortByDesc('visitors')
             ->values()
             ->toArray();
 
         $regionsAgg = $sessQ()
             ->whereNotNull('subdivision_code')
             ->groupBy('subdivision_code', 'country_code')
-            ->select('subdivision_code', 'country_code', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'))
-            ->orderByDesc('visits')
+            ->select('subdivision_code', 'country_code', DB::raw('COUNT(*) as visitors'))
+            ->orderByDesc('visitors')
             ->get()
             ->map(fn ($r) => [
                 'key' => $r->subdivision_code,
                 'country_code' => $r->country_code,
                 'visitors' => (int) $r->visitors,
-                'visits' => (int) $r->visits,
             ])
             ->toArray();
 
         $citiesAgg = $sessQ()
             ->whereNotNull('city')
             ->groupBy('city', 'subdivision_code', 'country_code')
-            ->select('city', 'subdivision_code', 'country_code', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'))
-            ->orderByDesc('visits')
+            ->select('city', 'subdivision_code', 'country_code', DB::raw('COUNT(*) as visitors'))
+            ->orderByDesc('visitors')
             ->get()
             ->map(fn ($r) => [
                 'key' => $r->city,
                 'subdivision_code' => $r->subdivision_code,
                 'country_code' => $r->country_code,
                 'visitors' => (int) $r->visitors,
-                'visits' => (int) $r->visits,
             ])
             ->toArray();
 
@@ -149,25 +142,24 @@ class AggregateAnalytics extends Command
 
         $entryPagesAgg = $sessQ()
             ->groupBy('entry_page')
-            ->select('entry_page', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'), DB::raw('ROUND(AVG(CASE WHEN is_bounce THEN 100.0 ELSE 0 END),1) as bounce_rate'))
-            ->orderByDesc('visits')
+            ->select('entry_page', DB::raw('COUNT(*) as visitors'), DB::raw('ROUND(AVG(CASE WHEN is_bounce THEN 100.0 ELSE 0 END),1) as bounce_rate'))
+            ->orderByDesc('visitors')
             ->get()
-            ->map(fn ($r) => ['key' => $r->entry_page, 'visits' => (int) $r->visits, 'visitors' => (int) $r->visitors, 'bounce_rate' => (float) $r->bounce_rate])
+            ->map(fn ($r) => ['key' => $r->entry_page, 'visitors' => (int) $r->visitors, 'bounce_rate' => (float) $r->bounce_rate])
             ->toArray();
 
         $exitPagesAgg = $sessQ()
             ->groupBy('exit_page')
-            ->select('exit_page', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'))
-            ->orderByDesc('visits')
+            ->select('exit_page', DB::raw('COUNT(*) as visitors'))
+            ->orderByDesc('visitors')
             ->get()
-            ->map(fn ($r) => ['key' => $r->exit_page, 'visits' => (int) $r->visits, 'visitors' => (int) $r->visitors])
+            ->map(fn ($r) => ['key' => $r->exit_page, 'visitors' => (int) $r->visitors])
             ->toArray();
 
         DailyStat::updateOrCreate(
             ['site_id' => $site->id, 'date' => $date],
             [
                 'visitors' => $visitors,
-                'visits' => $visits,
                 'pageviews' => $pageviews,
                 'views_per_visit' => $vpp,
                 'bounce_rate' => $bounceRate,

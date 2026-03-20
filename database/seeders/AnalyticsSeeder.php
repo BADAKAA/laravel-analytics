@@ -3,8 +3,10 @@
 namespace Database\Seeders;
 
 use App\Enums\DeviceType;
+use App\Enums\SiteRole;
 use App\Models\Session;
 use App\Models\Site;
+use App\Models\SiteUser;
 use App\Services\ChannelClassifier;
 use App\Services\VisitorHash;
 use Illuminate\Database\Seeder;
@@ -28,6 +30,11 @@ class AnalyticsSeeder extends Seeder
                 'timezone' => 'UTC',
                 'is_public' => false,
             ]
+        );
+
+        SiteUser::updateOrCreate(
+            ['site_id' => $site->id, 'user_id' => 1],
+            ['role' => SiteRole::Admin->value]
         );
 
         // Generate sessions for last 7 days (configurable)

@@ -35,7 +35,7 @@ class BenchmarkAggregateAnalytics extends Command
 
         // Initialize operation timings
         $operations = [
-            'db_delete', 'query_visits', 'query_visitors', 'query_pageviews', 'query_bounced',
+            'db_delete', 'query_visitors', 'query_pageviews', 'query_bounced',
             'query_avg_duration', 'calc_bounce_rate', 'calc_vpp',
             'agg_channel', 'agg_referrer', 'agg_utm_source', 'agg_utm_medium',
             'agg_utm_campaign', 'agg_utm_content', 'agg_utm_term',
@@ -106,14 +106,9 @@ class BenchmarkAggregateAnalytics extends Command
         $sessQ = fn () => Session::where('site_id', $site->id)
             ->whereDate('started_at', $date);
 
-        // Visits
-        $start = microtime(true);
-        $visits = $sessQ()->count();
-        $this->recordTiming('query_visits', $start);
-
         // Visitors
         $start = microtime(true);
-        $visitors = $sessQ()->distinct('visitor_id')->count('visitor_id');
+        $visitors = $sessQ()->count();
         $this->recordTiming('query_visitors', $start);
 
         // Pageviews
@@ -133,11 +128,11 @@ class BenchmarkAggregateAnalytics extends Command
 
         // Calculations
         $start = microtime(true);
-        $bounceRate = $visits > 0 ? round($bounced / $visits * 100, 2) : null;
+        $bounceRate = $visitors > 0 ? round($bounced / $visitors * 100, 2) : null;
         $this->recordTiming('calc_bounce_rate', $start);
 
         $start = microtime(true);
-        $vpp = $visits > 0 ? round($pageviews / $visits, 2) : null;
+        $vpp = $visitors > 0 ? round($pageviews / $visitors, 2) : null;
         $this->recordTiming('calc_vpp', $start);
 
         // Generic aggregation function
@@ -147,18 +142,16 @@ class BenchmarkAggregateAnalytics extends Command
                 ->groupBy($groupCol)
                 ->select(
                     DB::raw("{$groupCol} as grp_key"),
-                    DB::raw('COUNT(DISTINCT visitor_id) as visitors'),
-                    DB::raw('COUNT(*) as visits'),
+                    DB::raw('COUNT(*) as visitors'),
                     DB::raw('SUM(pageviews) as pageviews'),
                     DB::raw('ROUND(AVG(CASE WHEN is_bounce THEN 100.0 ELSE 0 END), 1) as bounce_rate'),
                     DB::raw('ROUND(AVG(COALESCE(duration, 0)), 0) as avg_duration'),
                 )
-                ->orderByDesc('visits')
+                ->orderByDesc('visitors')
                 ->get()
                 ->map(fn ($r) => [
                     'key' => $r->grp_key,
                     'visitors' => (int) $r->visitors,
-                    'visits' => (int) $r->visits,
                     'pageviews' => (int) $r->pageviews,
                     'bounce_rate' => (float) $r->bounce_rate,
                     'avg_duration' => (int) $r->avg_duration,
@@ -205,21 +198,20 @@ class BenchmarkAggregateAnalytics extends Command
         $browsersAgg = $sessQ()
             ->whereNotNull('browser')
             ->groupBy('browser', 'browser_version')
-            ->select('browser', 'browser_version', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'))
-            ->orderByDesc('visits')
+            ->select('browser', 'browser_version', DB::raw('COUNT(*) as visitors'))
+            ->orderByDesc('visitors')
             ->get()
             ->groupBy('browser')
             ->map(fn ($rows, $browser) => [
                 'key' => $browser,
                 'visitors' => (int) $rows->sum('visitors'),
-                'visits' => (int) $rows->sum('visits'),
                 'versions' => $rows
                     ->sortByDesc('visitors')
                     ->map(fn ($r) => ['key' => $r->browser_version, 'visitors' => (int) $r->visitors])
                     ->values()
                     ->toArray(),
             ])
-            ->sortByDesc('visits')
+            ->sortByDesc('visitors')
             ->values()
             ->toArray();
         $this->recordTiming('agg_browsers', $start);
@@ -228,21 +220,20 @@ class BenchmarkAggregateAnalytics extends Command
         $osAgg = $sessQ()
             ->whereNotNull('os')
             ->groupBy('os', 'os_version')
-            ->select('os', 'os_version', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'))
-            ->orderByDesc('visits')
+            ->select('os', 'os_version', DB::raw('COUNT(*) as visitors'))
+            ->orderByDesc('visitors')
             ->get()
             ->groupBy('os')
             ->map(fn ($rows, $os) => [
                 'key' => $os,
                 'visitors' => (int) $rows->sum('visitors'),
-                'visits' => (int) $rows->sum('visits'),
                 'versions' => $rows
                     ->sortByDesc('visitors')
                     ->map(fn ($r) => ['key' => $r->os_version, 'visitors' => (int) $r->visitors])
                     ->values()
                     ->toArray(),
             ])
-            ->sortByDesc('visits')
+            ->sortByDesc('visitors')
             ->values()
             ->toArray();
         $this->recordTiming('agg_os', $start);
@@ -255,14 +246,13 @@ class BenchmarkAggregateAnalytics extends Command
         $regionsAgg = $sessQ()
             ->whereNotNull('subdivision_code')
             ->groupBy('subdivision_code', 'country_code')
-            ->select('subdivision_code', 'country_code', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'))
-            ->orderByDesc('visits')
+            ->select('subdivision_code', 'country_code', DB::raw('COUNT(*) as visitors'))
+            ->orderByDesc('visitors')
             ->get()
             ->map(fn ($r) => [
                 'key' => $r->subdivision_code,
                 'country_code' => $r->country_code,
                 'visitors' => (int) $r->visitors,
-                'visits' => (int) $r->visits,
             ])
             ->toArray();
         $this->recordTiming('agg_regions', $start);
@@ -271,15 +261,14 @@ class BenchmarkAggregateAnalytics extends Command
         $citiesAgg = $sessQ()
             ->whereNotNull('city')
             ->groupBy('city', 'subdivision_code', 'country_code')
-            ->select('city', 'subdivision_code', 'country_code', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'))
-            ->orderByDesc('visits')
+            ->select('city', 'subdivision_code', 'country_code', DB::raw('COUNT(*) as visitors'))
+            ->orderByDesc('visitors')
             ->get()
             ->map(fn ($r) => [
                 'key' => $r->city,
                 'subdivision_code' => $r->subdivision_code,
                 'country_code' => $r->country_code,
                 'visitors' => (int) $r->visitors,
-                'visits' => (int) $r->visits,
             ])
             ->toArray();
         $this->recordTiming('agg_cities', $start);
@@ -298,20 +287,20 @@ class BenchmarkAggregateAnalytics extends Command
         $start = microtime(true);
         $entryPagesAgg = $sessQ()
             ->groupBy('entry_page')
-            ->select('entry_page', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'), DB::raw('ROUND(AVG(CASE WHEN is_bounce THEN 100.0 ELSE 0 END),1) as bounce_rate'))
-            ->orderByDesc('visits')
+            ->select('entry_page', DB::raw('COUNT(*) as visitors'), DB::raw('ROUND(AVG(CASE WHEN is_bounce THEN 100.0 ELSE 0 END),1) as bounce_rate'))
+            ->orderByDesc('visitors')
             ->get()
-            ->map(fn ($r) => ['key' => $r->entry_page, 'visits' => (int) $r->visits, 'visitors' => (int) $r->visitors, 'bounce_rate' => (float) $r->bounce_rate])
+            ->map(fn ($r) => ['key' => $r->entry_page, 'visitors' => (int) $r->visitors, 'bounce_rate' => (float) $r->bounce_rate])
             ->toArray();
         $this->recordTiming('agg_entry_pages', $start);
 
         $start = microtime(true);
         $exitPagesAgg = $sessQ()
             ->groupBy('exit_page')
-            ->select('exit_page', DB::raw('COUNT(DISTINCT visitor_id) as visitors'), DB::raw('COUNT(*) as visits'))
-            ->orderByDesc('visits')
+            ->select('exit_page', DB::raw('COUNT(*) as visitors'))
+            ->orderByDesc('visitors')
             ->get()
-            ->map(fn ($r) => ['key' => $r->exit_page, 'visits' => (int) $r->visits, 'visitors' => (int) $r->visitors])
+            ->map(fn ($r) => ['key' => $r->exit_page, 'visitors' => (int) $r->visitors])
             ->toArray();
         $this->recordTiming('agg_exit_pages', $start);
 
@@ -328,7 +317,6 @@ class BenchmarkAggregateAnalytics extends Command
             'site_id' => $site->id,
             'date' => $date,
             'visitors' => $visitors,
-            'visits' => $visits,
             'pageviews' => $pageviews,
             'views_per_visit' => $vpp,
             'bounce_rate' => $bounceRate,
@@ -435,7 +423,7 @@ class BenchmarkAggregateAnalytics extends Command
 
         $this->newLine();
         $categories = [
-            'Query Operations' => ['query_visits', 'query_visitors', 'query_pageviews', 'query_bounced', 'query_avg_duration'],
+            'Query Operations' => ['query_visitors', 'query_pageviews', 'query_bounced', 'query_avg_duration'],
             'Calculations' => ['calc_bounce_rate', 'calc_vpp'],
             'Aggregations (UTM & Channels)' => ['agg_channel', 'agg_referrer', 'agg_utm_source', 'agg_utm_medium', 'agg_utm_campaign', 'agg_utm_content', 'agg_utm_term'],
             'Aggregations (Geography)' => ['agg_country', 'agg_regions', 'agg_cities'],
@@ -504,7 +492,7 @@ class BenchmarkAggregateAnalytics extends Command
     private function formatOperationName(string $operation): string
     {
         $names = [
-            'query_visits' => 'Query Visits',
+            'query_visitors' => 'Query Visitors',
             'query_visitors' => 'Query Visitors',
             'query_pageviews' => 'Query Pageviews',
             'query_bounced' => 'Query Bounced',
