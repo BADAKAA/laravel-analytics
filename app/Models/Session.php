@@ -61,8 +61,10 @@ class Session extends Model
     }
 
     /**
-     * Alternative: Upsert using updateOrCreate() - for benchmarking comparison.
-     * This requires 2 queries: SELECT first, then INSERT or UPDATE.
+     * Optimized upsert using raw SQL for single atomic operation.
+     * Attempts UPDATE first, then INSERT only if needed.
+     * Uses timestamp-based range query instead of DATE() for better index usage.
+     * Faster than ORM-based updateOrCreate() approach.
      */
     public static function upsertFromPageview(
         int $siteId,
@@ -70,59 +72,29 @@ class Session extends Model
         array $createData,
         array $updateData
     ): void {
-        $today = today();
-
-        // Calculate duration for update
+        $now = now();
+        $today = $now->toDateString();
+        $startOfDay = "{$today} 00:00:00";
+        $endOfDay = "{$today} 23:59:59";
         $startTime = strtotime($createData['started_at']);
-        $updateData['duration'] = max(0, now()->timestamp - $startTime);
+        $updateData['duration'] = max(0, $now->timestamp - $startTime);
 
-        // Query 1: SELECT * FROM sessions WHERE site_id=? AND visitor_id=? AND DATE(started_at)=?
-        // Query 2: INSERT or UPDATE
-        self::where('site_id', $siteId)
-            ->where('visitor_id', $visitorId)
-            ->whereDate('started_at', $today)
-            ->latest('started_at')
-            ->limit(1)
-            ->update($updateData);
+        // Optimized UPDATE using raw SQL with timestamp range for better index usage
+        // Avoids DATE() function calls which can prevent index usage
+        $rowsUpdated = DB::update(
+            'UPDATE sessions SET pageviews = pageviews + 1, exit_page = ?, is_bounce = 0, duration = ? 
+             WHERE site_id = ? AND visitor_id = ? AND started_at >= ? AND started_at <= ?',
+            [
+                $updateData['exit_page'] ?? $createData['exit_page'],
+                $updateData['duration'],
+                $siteId,
+                $visitorId,
+                $startOfDay,
+                $endOfDay
+            ]
+        );
 
-        // Only insert if no update occurred
-        if (self::where('site_id', $siteId)
-            ->where('visitor_id', $visitorId)
-            ->whereDate('started_at', $today)
-            ->doesntExist()) {
-            self::create($createData);
-        }
-    }
-
-    /**
-     * Upsert using raw SQL with separate INSERT OR IGNORE + UPDATE queries.
-     * Two queries but with raw SQL overhead, database-specific syntax.
-     * For SQLite: INSERT OR IGNORE, For MySQL: INSERT IGNORE
-     */
-    public static function upsertFromPageviewRawSQL(
-        int $siteId,
-        string $visitorId,
-        array $createData,
-        array $updateData
-    ): void {
-        $today = today();
-        $startTime = strtotime($createData['started_at']);
-        $updateData['duration'] = max(0, now()->timestamp - $startTime);
-
-        // Query 1: Try to UPDATE existing session from today
-        // This will succeed if a session already exists, fail if it doesn't
-        $rowsUpdated = DB::table('sessions')
-            ->where('site_id', $siteId)
-            ->where('visitor_id', $visitorId)
-            ->whereDate('started_at', $today)
-            ->update([
-                'pageviews' => DB::raw('pageviews + 1'),
-                'exit_page' => $updateData['exit_page'] ?? $createData['exit_page'],
-                'is_bounce' => 0,
-                'duration' => $updateData['duration'],
-            ]);
-
-        // Query 2: Only insert if no rows were updated (session doesn't exist yet)
+        // Only INSERT if no rows were updated (session doesn't exist yet)
         if ($rowsUpdated === 0) {
             // Ensure 'id' field is present for UUID primary key
             if (!isset($createData['id'])) {

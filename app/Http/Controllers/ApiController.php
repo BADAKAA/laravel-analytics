@@ -82,7 +82,7 @@ class ApiController extends Controller
         $now = now();
         
         try {
-            Session::upsertFromPageviewRawSQL(
+            Session::upsertFromPageview(
                 siteId: $validated['site_id'],
                 visitorId: $visitorId,
                 createData: [
