@@ -6,7 +6,7 @@ const { name } = defineProps<{
     name: string;
 }>();
 
-const ICONS = [ 'google', 'facebook', 'twitter', 'instagram', 'reddit', 'duckduckgo', 'x' ] as const;
+const ICONS = [ 'google', 'facebook', 'twitter', 'instagram', 'reddit', 'duckduckgo', 'x', 'linkedin', 'bing' ] as const;
 const iconExists = computed(() => (ICONS as readonly string[]).includes(name.toLowerCase().replaceAll('/','-')));
 
 </script>
