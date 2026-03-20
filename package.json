@@ -35,12 +35,14 @@
     },
     "dependencies": {
         "@inertiajs/vue3": "^2.3.7",
+        "@types/iso-3166-2": "^1.0.4",
         "@types/leaflet": "^1.9.21",
         "@unovis/ts": "^1.6.4",
         "@unovis/vue": "^1.6.4",
         "@vueuse/core": "^12.8.2",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
+        "iso-3166-2": "^1.0.0",
         "laravel-vite-plugin": "^2.0.0",
         "leaflet": "^1.9.4",
         "lucide-vue-next": "^0.468.0",
@@ -50,7 +52,6 @@
         "tw-animate-css": "^1.2.5",
         "vue": "^3.5.13",
         "vue-input-otp": "^0.3.2",
-        "vue-simple-icons": "^7.5.0",
         "world-geojson": "^3.4.0"
     },
     "optionalDependencies": {
