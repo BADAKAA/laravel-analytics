@@ -9,6 +9,9 @@ import {
     DialogClose,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
+import { LoaderCircle } from 'lucide-vue-next';
+
+const DEBOUNCE_TIMEOUT = 300;
 
 interface DetailItem {
     name: string;
@@ -31,6 +34,8 @@ const cursor = ref<string | null>(null);
 const totalCount = ref(0);
 const totalVisitors = ref(0);
 const dialogOpen = ref(false);
+const itemsContainer = ref<HTMLElement | null>(null);
+const searchDebounceTimeout = ref<number | null>(null);
 
 const openModal = () => {
     dialogOpen.value = true;
@@ -82,9 +87,7 @@ const buildQueryParams = () => {
 };
 
 const fetchDetails = async (loadMore = false) => {
-    if (!props.siteId) {
-return;
-}
+    if (!props.siteId) return;
 
     isLoading.value = true;
 
@@ -107,6 +110,9 @@ return;
         console.error('Error fetching details:', error);
     } finally {
         isLoading.value = false;
+        if (!loadMore && itemsContainer.value) {
+            itemsContainer.value?.style.removeProperty('height');
+        }
     }
 };
 
@@ -115,9 +121,17 @@ const onLoadMore = () => {
 };
 
 const onSearchChange = () => {
-    cursor.value = null;
-    items.value = [];
-    fetchDetails();
+    if (searchDebounceTimeout.value) {
+        clearTimeout(searchDebounceTimeout.value);
+    }
+    searchDebounceTimeout.value = window.setTimeout(() => {
+        cursor.value = null;
+        items.value = [];
+        const currentHeight = itemsContainer.value?.clientHeight || 0;
+        itemsContainer.value?.style.setProperty('height', `${Math.max(currentHeight, 100)}px`);
+
+        fetchDetails();
+    }, DEBOUNCE_TIMEOUT);
 };
 
 watch(() => dialogOpen.value, (newValue) => {
@@ -151,29 +165,21 @@ const itemPercentage = (item: DetailItem): number => {
 
             <!-- Search Bar -->
             <div class="mb-4">
-                <Input
-                    v-model="searchQuery"
-                    type="text"
-                    placeholder="Search..."
-                    class="w-full"
-                    @input="onSearchChange"
-                />
+                <Input v-model="searchQuery" type="text" placeholder="Search..." class="w-full"
+                    @input="onSearchChange" />
             </div>
 
             <!-- Items List -->
-            <div class="max-h-96 overflow-y-auto">
-                <div v-if="isLoading && items.length === 0" class="flex py-8 justify-center">
-                    <div class="text-gray-500">Loading...</div>
+            <div class="max-h-96 overflow-y-auto" ref="itemsContainer">
+                <div v-if="isLoading" class="flex py-8 justify-center">
+                    <LoaderCircle class="h-8 w-8 animate-spin opacity-30" />
                 </div>
                 <div v-else-if="items.length === 0" class="flex py-8 justify-center">
                     <div class="text-gray-500">No items found</div>
                 </div>
                 <div v-else class="flex flex-col gap-1">
-                    <div
-                        v-for="(item, index) in items"
-                        :key="index"
-                        class="group flex cursor-pointer items-center rounded-md hover:bg-foreground/5 transition-colors pr-2"
-                    >
+                    <div v-for="(item, index) in items" :key="index"
+                        class="group flex cursor-pointer items-center rounded-md hover:bg-foreground/5 transition-colors pr-2">
                         <!-- Item Name -->
                         <div class="grow truncate relative px-2 py-1.5">
                             <div class="w-full absolute inset-0">
@@ -205,10 +211,7 @@ const itemPercentage = (item: DetailItem): number => {
 
             <!-- Load More Button -->
             <div v-if="hasMore" class="mt-6 flex justify-center">
-                <Button
-                    :disabled="isLoading"
-                    @click="onLoadMore"
-                >
+                <Button :disabled="isLoading" @click="onLoadMore">
                     {{ isLoading ? 'Loading...' : 'Load More' }}
                 </Button>
             </div>
