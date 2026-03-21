@@ -30,9 +30,9 @@ const scriptTagForSite = (site: SiteItem) => {
             ? window.location.origin
             : 'https://your-analytics-domain.com';
 
-    const scriptUrl = `${origin}/client.js?site_id=${site.id}`;
+    const scriptUrl = `${origin}/build/client.js?site_id=${site.id}`;
 
-    return `<script defer src="${scriptUrl}"><\/script>`;
+    return `<script src="${scriptUrl}" defer><\/script>`;
 };
 
 const copySiteScript = async (site: SiteItem) => {
