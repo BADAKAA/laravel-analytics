@@ -23,6 +23,7 @@ interface Site {
 
 interface Metric {
     visitors: number;
+    visits: number;
     pageviews: number;
     bounce_rate: number;
     avg_duration: number;
@@ -66,7 +67,7 @@ const detailModalCategory = ref('');
 const pollingInterval = ref<number | null>(null);
 const hasZoomedChart = ref(false);
 const zoomedDateRange = ref<{ from: string; to: string } | null>(null);
-const selectedChartMetric = ref<'visitors' | 'pageviews' | 'bounce_rate' | 'avg_duration' | 'views_per_visit'>('visitors');
+const selectedChartMetric = ref<'visitors' | 'visits' | 'pageviews' | 'bounce_rate' | 'avg_duration' | 'views_per_visit'>('visitors');
 
 const timeframeOptions = [
     { label: 'Today', value: 'today' },
@@ -110,11 +111,10 @@ const dateRange = computed(() => {
 });
 
 const unfilteredMetrics = computed(() => {
-    if (!props.unfiltered_data) {
-return null;
-}
+    if (!props.unfiltered_data) return null;
 
     return {
+        visits: props.unfiltered_data.visits,
         visitors: props.unfiltered_data.visitors,
         pageviews: props.unfiltered_data.pageviews,
         bounce_rate: props.unfiltered_data.bounce_rate,
@@ -218,7 +218,7 @@ const onChartReset = () => {
     refreshData();
 };
 
-const onMetricCardClick = (metric: 'visitors' | 'pageviews' | 'bounce_rate' | 'avg_duration' | 'views_per_visit') => {
+const onMetricCardClick = (metric: 'visitors' | 'visits' | 'pageviews' | 'bounce_rate' | 'avg_duration' | 'views_per_visit') => {
     selectedChartMetric.value = metric;
 };
 
@@ -349,15 +349,26 @@ pageTabs = [ ...pageTabs,
                 <!-- Summary Chart and Metrics -->
                 <div>
                     <!-- Metrics Cards -->
-                    <div class="mb-6 grid md:grid-cols-2 lg:grid-cols-5 divide-x border rounded-lg">
+                    <div class="mb-6 grid md:grid-cols-2 lg:grid-cols-6 divide-x border rounded-lg">
                         <div class="cursor-pointer p-4 transition-all"
                             :class="selectedChartMetric === 'visitors' ? 'bg-neutral-100 dark:bg-neutral-900/30' : ''"
                             @click="onMetricCardClick('visitors')">
                             <div class="text-xs font-medium text-gray-600 dark:text-gray-400"
                                 :class="selectedChartMetric === 'visitors' ? 'text-blue-600 dark:text-blue-400 underline' : ''">
-                                Visitors</div>
+                                Unique Visitors</div>
                             <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">
                                 {{ compactNumber(metrics?.visitors ?? unfilteredMetrics?.visitors ?? 0) }}
+                            </div>
+                        </div>
+
+                        <div class="cursor-pointer p-4 transition-all"
+                            :class="selectedChartMetric === 'visits' ? 'bg-neutral-100 dark:bg-neutral-900/30' : ''"
+                            @click="onMetricCardClick('visits')">
+                            <div class="text-xs font-medium text-gray-600 dark:text-gray-400"
+                                :class="selectedChartMetric === 'visits' ? 'text-blue-600 dark:text-blue-400 underline' : ''">
+                                Sessions</div>
+                            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">
+                                {{ compactNumber(metrics?.visits ?? unfilteredMetrics?.visits ?? 0) }}
                             </div>
                         </div>
 
@@ -397,7 +408,7 @@ pageTabs = [ ...pageTabs,
                             @click="onMetricCardClick('views_per_visit')">
                             <div class="text-xs font-medium text-gray-600 dark:text-gray-400"
                                 :class="selectedChartMetric === 'views_per_visit' ? 'text-blue-600 dark:text-blue-400 underline' : ''">
-                                Views per Visit</div>
+                                Views per Session</div>
                             <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">{{
                                 metrics?.views_per_visit ?? unfilteredMetrics?.views_per_visit ?? 0 }}</div>
                         </div>

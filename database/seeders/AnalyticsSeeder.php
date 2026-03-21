@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Artisan;
 class AnalyticsSeeder extends Seeder
 {
     private ChannelClassifier $channelClassifier;
+    private const REPEAT_VISITOR_PERCENTAGE = 20;
 
     public function run(): void
     {
@@ -108,6 +109,24 @@ class AnalyticsSeeder extends Seeder
         ];
 
         $startDate = today()->subDays($days - 1);
+        
+        // Create a pool of regular visitors (50% of sessions will be from repeat visitors)
+        $regularVisitors = [];
+        $regularVisitorCount = 10;
+        for ($i = 0; $i < $regularVisitorCount; $i++) {
+            $ip = implode('.', [rand(100, 200), rand(1, 255), rand(1, 255), '0']);
+            $browser = $this->weightedRandom($browsers);
+            $os = $this->weightedRandom($operatingSystems);
+            $userAgent = $this->getUserAgent($browser['name'], $os['name']);
+            $visitorId = VisitorHash::make($ip, $userAgent, $site->domain);
+            $regularVisitors[] = [
+                'visitor_id' => $visitorId,
+                'ip' => $ip,
+                'user_agent' => $userAgent,
+                'browser' => $browser['name'],
+                'os' => $os['name'],
+            ];
+        }
 
         for ($i = 0; $i < $days; $i++) {
             $date = $startDate->copy()->addDays($i);
@@ -115,13 +134,32 @@ class AnalyticsSeeder extends Seeder
 
             for ($s = 0; $s < $sessionCount; $s++) {
                 $traffic = $this->weightedRandom($trafficSources);
-                $browser = $this->weightedRandom($browsers);
-                $os = $this->weightedRandom($operatingSystems);
                 $device = $this->weightedRandom($devices);
                 $location = $this->weightedRandom($countries);
 
-                $browserVersion = $browser['versions'][array_rand($browser['versions'])];
-                $osVersion = $os['versions'][array_rand($os['versions'])];
+                if (rand(1, 100) <= self::REPEAT_VISITOR_PERCENTAGE) {
+                    $regularVisitor = $regularVisitors[array_rand($regularVisitors)];
+                    $visitorId = $regularVisitor['visitor_id'];
+                    $browserName = $regularVisitor['browser'];
+                    $osName = $regularVisitor['os'];
+                } else {
+                    // Create new visitor
+                    $ip = implode('.', [rand(1, 255), rand(1, 255), rand(1, 255), '0']);
+                    $browser = $this->weightedRandom($browsers);
+                    $os = $this->weightedRandom($operatingSystems);
+                    $browserName = $browser['name'];
+                    $osName = $os['name'];
+                    $userAgent = $this->getUserAgent($browserName, $osName);
+                    $visitorId = VisitorHash::make($ip, $userAgent, $site->domain);
+                }
+
+                // Get browser/OS versions
+                $browserData = collect($browsers)->firstWhere('name', $browserName);
+                $browserVersion = $browserData['versions'][array_rand($browserData['versions'])];
+                
+                $osData = collect($operatingSystems)->firstWhere('name', $osName);
+                $osVersion = $osData['versions'][array_rand($osData['versions'])];
+
                 $channel = $this->channelClassifier->classify(
                     $traffic['source'],
                     $traffic['medium'],
@@ -133,15 +171,6 @@ class AnalyticsSeeder extends Seeder
                     ->setHour(rand(0, 23))
                     ->setMinute(rand(0, 59))
                     ->setSecond(rand(0, 59));
-
-                $ip = implode('.', [rand(1, 255), rand(1, 255), rand(1, 255), '0']);
-                $userAgent = $this->getUserAgent($browser['name'], $os['name']);
-
-                $visitorId = VisitorHash::make(
-                    $ip,
-                    $userAgent,
-                    $site->domain,
-                );
 
                 $isBounce = rand(1, 100) <= 30;
                 $pageviewCount = $isBounce ? 1 : rand(2, 5);
@@ -186,9 +215,9 @@ class AnalyticsSeeder extends Seeder
                     'country_code' => $location['country_code'],
                     'subdivision_code' => $location['country_code'] . '-' . $location['subdivision'],
                     'city' => $location['city'],
-                    'browser' => $browser['name'],
+                    'browser' => $browserName,
                     'browser_version' => $browserVersion,
-                    'os' => $os['name'],
+                    'os' => $osName,
                     'os_version' => $osVersion,
                     'device_type' => $device['type'],
                     'screen_width' => $screenWidth,

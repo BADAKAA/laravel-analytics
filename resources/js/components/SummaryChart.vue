@@ -8,6 +8,7 @@ const CURVE_TYPE:'linear'|'basis'|'step' = 'linear';
 interface ChartDataPoint {
     date: string;
     visitors: number;
+    visits: number;
     pageviews: number;
     bounce_rate: number;
     avg_duration: number;
@@ -15,7 +16,7 @@ interface ChartDataPoint {
 }
 
 
-type MetricType = 'visitors' | 'pageviews' | 'bounce_rate' | 'avg_duration' | 'views_per_visit';
+type MetricType = 'visitors' | 'visits' | 'pageviews' | 'bounce_rate' | 'avg_duration' | 'views_per_visit';
 
 const props = defineProps<{
     data: ChartDataPoint[];
@@ -41,6 +42,7 @@ const yAccessor = (d: ChartDataPoint) => {
 
 const metricColors = {
     visitors: '#3b82f6', // blue
+    visits: '#06b6d4', // cyan
     pageviews: '#6366f1', // indigo
     bounce_rate: '#ef4444', // red
     avg_duration: '#f59e0b', // amber

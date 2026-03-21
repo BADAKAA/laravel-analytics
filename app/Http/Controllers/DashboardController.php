@@ -75,6 +75,7 @@ class DashboardController extends Controller
         if ($dailyStats->isEmpty()) {
             return [
                 'visitors' => 0,
+                'visits' => 0,
                 'pageviews' => 0,
                 'bounce_rate' => 0,
                 'avg_duration' => 0,
@@ -95,10 +96,11 @@ class DashboardController extends Controller
 
         // Aggregate metrics
         $visitors = $dailyStats->sum('visitors');
+        $visits = $dailyStats->sum('visits');
         $pageviews = $dailyStats->sum('pageviews');
         $avgDuration = $dailyStats->avg('avg_duration');
-        $bounceRate = ($visitors > 0) ? round(($dailyStats->sum(function ($stat) { return $stat->bounce_rate * $stat->visitors; }) / $visitors), 2) : 0;
-        $viewsPerVisit = ($visitors > 0) ? round($pageviews / $visitors, 2) : 0;
+        $bounceRate = ($visits > 0) ? round(($dailyStats->sum(function ($stat) { return $stat->bounce_rate * $stat->visits; }) / $visits), 2) : 0;
+        $viewsPerVisit = ($visits > 0) ? round($pageviews / $visits, 2) : 0;
 
         // Merge aggregated data from all days
         $channels = $this->mergeAggregations($dailyStats->pluck('channels_agg'));
@@ -114,6 +116,7 @@ class DashboardController extends Controller
 
         return [
             'visitors' => $visitors,
+            'visits' => $visits,
             'pageviews' => $pageviews,
             'bounce_rate' => $bounceRate,
             'avg_duration' => round($avgDuration, 2),
@@ -121,10 +124,11 @@ class DashboardController extends Controller
             'chart_data' => $dailyStats->map(fn ($stat) => [
                 'date' => $stat->date->toDateString(),
                 'visitors' => $stat->visitors,
+                'visits' => $stat->visits,
                 'pageviews' => $stat->pageviews,
                 'bounce_rate' => round($stat->bounce_rate, 2),
                 'avg_duration' => $stat->avg_duration,
-                'views_per_visit' => $stat->visitors > 0 ? round($stat->pageviews / $stat->visitors, 2) : 0,
+                'views_per_visit' => $stat->visits > 0 ? round($stat->pageviews / $stat->visits, 2) : 0,
             ]),
             'channels' => array_slice($channels, 0, self::TOP_X_RESULTS),
             'top_pages' => array_slice($topPages, 0, self::TOP_X_RESULTS),
@@ -151,8 +155,8 @@ class DashboardController extends Controller
                     // Handle structured aggregations (objects with 'key' and metric fields)
                     if (is_array($item) && isset($item['key'])) {
                         $key = (string) $item['key'];
-                        // Use 'pageviews' if available (for top_pages), otherwise 'visitors'
-                        $count = (int) ($item['pageviews'] ?? $item['visitors'] ?? 0);
+                        // Use 'pageviews' if available (for top_pages), otherwise 'visits' (session count)
+                        $count = (int) ($item['pageviews'] ?? $item['visits'] ?? $item['visitors'] ?? 0);
                         $merged[$key] = ($merged[$key] ?? 0) + $count;
                     } else {
                         // Handle flat key-value pairs (legacy format)
@@ -168,7 +172,7 @@ class DashboardController extends Controller
 
         arsort($merged);
 
-        return array_map(fn ($key, $count) => ['name' => $key, 'visitors' => $count], array_keys($merged), array_values($merged));
+        return array_map(fn ($key, $count) => ['name' => $key, 'visits' => $count], array_keys($merged), array_values($merged));
     }
 
     /**
@@ -232,17 +236,19 @@ class DashboardController extends Controller
     {
         [$query, $startDate, $endDate, $filters] = $this->buildBaseQuery($request);
 
-        $totalSessions = $query->count();
+        $totalVisits = $query->count();
+        $totalVisitors = $query->distinct('visitor_id')->count();
         $bouncedSessions = $query->where('is_bounce', true)->count();
         $totalPageviews = $query->sum('pageviews');
         $avgDuration = $query->avg('duration');
 
         return response()->json([
-            'visitors' => $totalSessions,
+            'visitors' => $totalVisitors,
+            'visits' => $totalVisits,
             'pageviews' => $totalPageviews,
-            'bounce_rate' => $totalSessions > 0 ? round(($bouncedSessions / $totalSessions), 2) : 0,
+            'bounce_rate' => $totalVisits > 0 ? round(($bouncedSessions / $totalVisits), 2) : 0,
             'avg_duration' => round($avgDuration ?? 0, 2),
-            'views_per_visit' => $totalSessions > 0 ? round($totalPageviews / $totalSessions, 2) : 0,
+            'views_per_visit' => $totalVisits > 0 ? round($totalPageviews / $totalVisits, 2) : 0,
         ]);
     }
 
@@ -255,17 +261,18 @@ class DashboardController extends Controller
 
         // Group by date
         $data = $query
-            ->selectRaw('DATE(started_at) as date, COUNT(*) as visitors, SUM(pageviews) as pageviews, AVG(duration) as avg_duration, ROUND(SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END) / COUNT(*) * 100, 2) as bounce_rate')
+            ->selectRaw('DATE(started_at) as date, COUNT(*) as visits, COUNT(DISTINCT visitor_id) as visitors, SUM(pageviews) as pageviews, AVG(duration) as avg_duration, ROUND(SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END) / COUNT(*) * 100, 2) as bounce_rate')
             ->groupBy('date')
             ->orderBy('date')
             ->get()
             ->map(fn ($item) => [
                 'date' => $item->date,
                 'visitors' => $item->visitors,
+                'visits' => $item->visits,
                 'pageviews' => $item->pageviews,
                 'bounce_rate' => $item->bounce_rate ?? 0,
                 'avg_duration' => $item->avg_duration,
-                'views_per_visit' => $item->visitors > 0 ? round($item->pageviews / $item->visitors, 2) : 0,
+                'views_per_visit' => $item->visits > 0 ? round($item->pageviews / $item->visits, 2) : 0,
             ]);
 
         return response()->json($data);

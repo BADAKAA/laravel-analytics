@@ -14,6 +14,7 @@ class DailyStat extends Model
         'site_id',
         'date',
         'visitors',
+        'visits',
         'pageviews',
         'views_per_visit',
         'bounce_rate',
