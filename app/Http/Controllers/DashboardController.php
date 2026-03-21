@@ -326,6 +326,10 @@ class DashboardController extends Controller
             return $this->getChannelLabel($value);
         }
 
+        if ($formatEnum && $column === 'device_type') {
+            return $this->getDeviceLabel($value);
+        }
+
         return (string) $value;
     }
 
