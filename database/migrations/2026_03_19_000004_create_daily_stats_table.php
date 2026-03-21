@@ -43,7 +43,7 @@ return new class extends Migration
             $table->json('os_agg')->nullable();
             $table->json('devices_agg')->nullable();
 
-            $table->timestamps();
+            // $table->timestamps();
             $table->unique(['site_id', 'date']);
         });
     }
