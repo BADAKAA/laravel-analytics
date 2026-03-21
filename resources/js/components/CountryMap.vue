@@ -331,8 +331,6 @@ function onEachCountry(feature: any, layer: L.Layer) {
 }
 
 const initializeMap = async () => {
-    console.log('INIT');
-    
     if (!mapContainer.value?.offsetHeight || initialisingMap.value) {
         return setTimeout(() => initializeMap(), 300);
     }
