@@ -54,10 +54,13 @@ Replace:
 
 That's it! The tracking script will automatically:
 - Track page views
+- Track SPA route changes automatically (History API, back/forward, and hash navigation)
 - Detect sessions based on visitor fingerprinting
 - Capture browser and device information
 - Parse UTM parameters for campaign tracking
 - Send data to your analytics server
+
+The script only sends a page view after the visitor has stayed on the site for at least the minimum visit duration configured in the client *(default: 2s)*.
 
 #### Optional Parameters
 
@@ -68,6 +71,10 @@ The script automatically captures:
 - **UTM parameters** - utm_source, utm_medium, utm_campaign, utm_content, utm_term
 
 No additional page view events need to be manually triggered.
+
+For SPAs, manual tracking is usually not required because route changes are auto-detected. If you need explicit control, you can still trigger tracking with either global API:
+- `window.trackAnalyticsPageview()`
+- `window.analyticsClient?.trackPageview()`
 
 ### Page View Tracking
 
@@ -94,8 +101,8 @@ Geolocation is disabled by default and controlled through `config/analytics.php`
 - `geoip.endpoint`: API endpoint used when local DB is disabled/unavailable.
 - `geoip.rate_limit`: Rate limit used for provider API lookups.
 
-Default provider endpoint:
-- [ip-api.com](https://ip-api.com/)
+Default provider endpoint: [ip-api.com](https://ip-api.com/)
+> Before enabling API-based geolocation, review and comply with your provider's terms and usage limits ([ip-api.com terms](https://ip-api.com/)).
 
 If you want local database lookups:
 
@@ -106,8 +113,6 @@ If you want local database lookups:
    composer require geoip2/geoip2
    ```
 
-Provider terms notice:
-- Before enabling API-based geolocation, review and comply with your provider's terms and usage limits (including [ip-api.com terms](https://ip-api.com/)).
 
 ## Legal Disclaimer
 
