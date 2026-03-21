@@ -3,6 +3,8 @@ import { VisXYContainer, VisLine, VisAxis, VisArea, VisTooltip, VisCrosshair } f
 import { computed } from 'vue';
 import { compactNumber } from '@/lib/utils';
 
+const CURVE_TYPE:'linear'|'basis'|'step' = 'linear';
+
 interface ChartDataPoint {
     date: string;
     visitors: number;
@@ -125,6 +127,7 @@ const crosshairTemplate = (datum: ChartDataPoint | undefined, x: number | Date) 
                 <VisArea
                     :x="xAccessor"
                     :y="yAccessor"
+                    :curveType="CURVE_TYPE"
                     color="url(#summaryMetricFill)"
                 />
 
@@ -134,6 +137,7 @@ const crosshairTemplate = (datum: ChartDataPoint | undefined, x: number | Date) 
                     :y="yAccessor"
                     :color="metricColor"
                     :stroke-width="2"
+                    :curveType="CURVE_TYPE"
                     @data-point-click="handlePointClick"
                 />
 
