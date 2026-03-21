@@ -27,7 +27,7 @@ class DashboardController extends Controller
         $sites = $user->sites()->get(['sites.id', 'name', 'domain', 'timezone']);
 
         $siteId = $request->query('site_id') ? (int) $request->query('site_id') : $sites->first()?->id;
-        if (!$siteId) abort(404, 'No sites found');
+        if (!$siteId) return redirect()->route('sites.index');
 
         $timeframe = $request->query('timeframe', self::DEFAULT_TIMEFRAME);
         $customStart = $request->query('date_from');

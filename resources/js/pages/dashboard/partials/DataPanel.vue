@@ -56,7 +56,7 @@ const maxValue = computed(() => {
     <div class="flex flex-col rounded-lg border border-sidebar-border/70 bg-white dark:border-sidebar-border dark:bg-slate-950">
         <!-- Header -->
         <div class="flex items-center justify-between border-b border-sidebar-border/70 p-4 dark:border-sidebar-border">
-            <h3 class="text-lg font-semibold dark:text-gray-100">{{ title }}</h3>
+            <h3 class="text-lg font-semibold dark:text-neutral-200">{{ title }}</h3>
             <Button
                 variant="ghost"
                 size="sm"

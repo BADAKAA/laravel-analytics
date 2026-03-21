@@ -42,7 +42,7 @@ class Site extends Model
 
     public function users(): BelongsToMany
     {
-        return $this->belongsToMany(User::class)
+        return $this->belongsToMany(User::class, 'site_users')
             ->withPivot('role')
             ->withTimestamps();
     }
