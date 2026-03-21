@@ -603,6 +603,8 @@ class DashboardController extends Controller
             'browser' => $request->query('filter_browser'),
             'os' => $request->query('filter_os'),
             'page' => $request->query('filter_page'),
+            'entry_page' => $request->query('filter_entry_page'),
+            'exit_page' => $request->query('filter_exit_page'),
             'referrer_domain' => $request->query('filter_referrer_domain'),
             'utm_campaign' => $request->query('filter_utm_campaign'),
         ];
@@ -661,9 +663,15 @@ class DashboardController extends Controller
             $query->where("{$prefix}os", $filters['os']);
         }
         if ($filters['page']) {
-            $column = $tablePrefix === 'pageview' ? 'pathname' : 'entry_page';
-            $tablePrefix = $tablePrefix === 'pageview' ? 'pageviews.' : '';
-            $query->where("{$tablePrefix}{$column}", $filters['page']);
+            if ($tablePrefix === 'pageview') {
+                $query->where('pageviews.pathname', $filters['page']);
+            }
+        }
+        if ($filters['entry_page']) {
+            $query->where("{$prefix}entry_page", $filters['entry_page']);
+        }
+        if ($filters['exit_page']) {
+            $query->where("{$prefix}exit_page", $filters['exit_page']);
         }
         if ($filters['referrer_domain']) {
             $query->where("{$prefix}referrer_domain", $filters['referrer_domain']);
