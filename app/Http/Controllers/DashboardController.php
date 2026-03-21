@@ -111,10 +111,10 @@ class DashboardController extends Controller
         }
 
         // Aggregate metrics
-        $visitors = $dailyStats->sum('visitors');
-        $visits = $dailyStats->sum('visits');
-        $pageviews = $dailyStats->sum('pageviews');
-        $avgDuration = $dailyStats->avg('avg_duration');
+        $visitors = $dailyStats->sum('visitors') ?? 0;
+        $visits = $dailyStats->sum('visits') ?? 0;
+        $pageviews = $dailyStats->sum('pageviews') ?? 0;
+        $avgDuration = $dailyStats->avg('avg_duration') ?? 0;
         $bounceRate = ($visits > 0) ? round(($dailyStats->sum(function ($stat) { return $stat->bounce_rate * $stat->visits; }) / $visits), 2) : 0;
         $viewsPerVisit = ($visits > 0) ? round($pageviews / $visits, 2) : 0;
 
@@ -251,18 +251,19 @@ class DashboardController extends Controller
     {
         [$query, $startDate, $endDate, $filters] = $this->buildBaseQuery($request);
 
-        $totalVisits = $query->count();
-        $totalVisitors = $query->distinct('visitor_id')->count();
-        $bouncedSessions = $query->where('is_bounce', true)->count();
-        $totalPageviews = $query->sum('pageviews');
-        $avgDuration = $query->avg('duration');
+        $totalVisits = (clone $query)->count();
+        $totalVisitors = (clone $query)->distinct('visitor_id')->count();
+        $bouncedSessions = (clone $query)->where('is_bounce', true)->count();
+        $totalPageviews = (clone $query)->sum('pageviews') ?? 0;
+        $avgDuration = (clone $query)->avg('duration') ?? 0;
+
 
         return response()->json([
             'visitors' => $totalVisitors,
             'visits' => $totalVisits,
             'pageviews' => $totalPageviews,
             'bounce_rate' => $totalVisits > 0 ? round(($bouncedSessions / $totalVisits), 2) : 0,
-            'avg_duration' => round($avgDuration ?? 0, 2),
+            'avg_duration' => round($avgDuration, 2),
             'views_per_visit' => $totalVisits > 0 ? round($totalPageviews / $totalVisits, 2) : 0,
         ]);
     }
@@ -286,7 +287,7 @@ class DashboardController extends Controller
                 'visits' => $item->visits,
                 'pageviews' => $item->pageviews,
                 'bounce_rate' => $item->bounce_rate ?? 0,
-                'avg_duration' => $item->avg_duration,
+                'avg_duration' => round($item->avg_duration, 2),
                 'views_per_visit' => $item->visits > 0 ? round($item->pageviews / $item->visits, 2) : 0,
             ]);
 
