@@ -37,7 +37,6 @@ describe('Analytics API Endpoint', function () {
                 'site_id' => $this->site->id,
                 'pathname' => '/home',
                 'is_entry' => true,
-                'is_exit' => true,
             ]);
         }
     });
@@ -75,7 +74,6 @@ describe('Analytics API Endpoint', function () {
                 'session_id' => $session1->id,
                 'pathname' => '/home',
                 'is_entry' => true,
-                'is_exit' => true,
             ]);
         }
 
@@ -97,12 +95,12 @@ describe('Analytics API Endpoint', function () {
 
         // Verify pageview tracking
         if (config('analytics.track_page_views')) {
-            // First pageview should have is_exit = false now
+            // If is_exit was also tracked on the pageview level, is_exit should be false now
             $this->assertDatabaseHas('pageviews', [
                 'site_id' => $this->site->id,
                 'pathname' => '/home',
                 'is_entry' => true,
-                'is_exit' => false,
+                // 'is_exit' => false,
             ]);
 
             // Second pageview should be created
@@ -110,7 +108,6 @@ describe('Analytics API Endpoint', function () {
                 'site_id' => $this->site->id,
                 'pathname' => '/about',
                 'is_entry' => false,
-                'is_exit' => true,
             ]);
         }
     });

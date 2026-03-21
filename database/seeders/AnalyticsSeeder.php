@@ -247,7 +247,6 @@ class AnalyticsSeeder extends Seeder
                             'pathname' => $page,
                             'viewed_at' => $pageviewTime,
                             'is_entry' => $pageIndex === 0,
-                            'is_exit' => $pageIndex === count($pages) - 1,
                         ];
                         // Increment time for next pageview
                         $pageviewTime->addSeconds(rand(5, 30));
@@ -274,7 +273,6 @@ class AnalyticsSeeder extends Seeder
                                 'pathname' => $pv['pathname'],
                                 'viewed_at' => $pv['viewed_at'],
                                 'is_entry' => $pv['is_entry'],
-                                'is_exit' => $pv['is_exit'],
                             ];
                         }
                     }

@@ -176,13 +176,6 @@ class ApiController extends Controller {
                     ->orderBy('started_at', 'desc')
                     ->first();
 
-                // Mark previous pageview as not exit
-                if (!$isNewSession) {
-                    Pageview::where('session_id', $session->id)
-                        ->where('is_exit', true)
-                        ->update(['is_exit' => false]);
-                }
-
                 // Create new pageview
                 Pageview::create([
                     'site_id' => $validated['site_id'],
@@ -191,7 +184,6 @@ class ApiController extends Controller {
                     'pathname' => $validated['pathname'],
                     'viewed_at' => $now,
                     'is_entry' => $isNewSession,
-                    'is_exit' => true,
                 ]);
                 $this->recordTiming('pageview_operations', $t_pageview);
             }

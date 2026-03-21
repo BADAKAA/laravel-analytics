@@ -21,7 +21,6 @@ return new class extends Migration
             
             $table->dateTime('viewed_at');
             $table->boolean('is_entry')->default(false);
-            $table->boolean('is_exit')->default(false);
         });
     }
 

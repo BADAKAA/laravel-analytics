@@ -404,14 +404,14 @@ class DashboardController extends Controller
         $query = Pageview::where('pageviews.site_id', $siteId)
             ->whereBetween('viewed_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
 
+        $query->join('sessions', 'pageviews.session_id', '=', 'sessions.id');
+
         // Add page type filter
         if ($type === 'entry_pages') {
             $query->where('is_entry', true);
         } elseif ($type === 'exit_pages') {
-            $query->where('is_exit', true);
+            $query->whereRaw('pageviews.pathname = sessions.exit_page');
         }
-
-        $query->join('sessions', 'pageviews.session_id', '=', 'sessions.id');
         $query = $this->applyFilters($query, $filters, 'pageview');
 
         $total = (clone $query)->count();
