@@ -12,6 +12,7 @@ use App\Services\ChannelClassifier;
 use App\Services\VisitorHash;
 use Illuminate\Database\Seeder;
 use Illuminate\Support\Facades\Artisan;
+use Illuminate\Support\Str;
 
 class AnalyticsSeeder extends Seeder
 {
@@ -128,6 +129,10 @@ class AnalyticsSeeder extends Seeder
             ];
         }
 
+        $sessionBatch = [];
+        $pageviewBatch = [];
+        $sessionIdMap = []; // Track session IDs for pageview mapping
+
         for ($i = 0; $i < $days; $i++) {
             $date = $startDate->copy()->addDays($i);
             $sessionCount = rand(20, 100);
@@ -195,7 +200,10 @@ class AnalyticsSeeder extends Seeder
                     $exitPage = $page;
                 }
 
-                $session = Session::create([
+                $sessionId = Str::uuid();
+
+                $sessionData = [
+                    'id' => $sessionId,
                     'site_id' => $site->id,
                     'visitor_id' => $visitorId,
                     'started_at' => $sessionTime,
@@ -221,25 +229,64 @@ class AnalyticsSeeder extends Seeder
                     'os_version' => $osVersion,
                     'device_type' => $device['type'],
                     'screen_width' => $screenWidth,
-                ]);
+                ];
+                $sessionBatch[] = $sessionData;
 
-                // Create pageview records if tracking is enabled
+                // Store session ID mapping for pageview insertion
+                $sessionIdMap[$visitorId . '|' . $sessionTime->timestamp] = $sessionId;
+
+                // Store pageview data temporarily (need session ID after insertion)
                 if (config('analytics.track_page_views', true)) {
                     $pageviewTime = $sessionTime->copy();
                     foreach ($pages as $pageIndex => $page) {
-                        Pageview::create([
+                        $pageviewBatch[] = [
+                            'visitor_id' => $visitorId,  // Add visitor_id for session matching
+                            'started_at' => $sessionTime,  // Add started_at for session matching
                             'site_id' => $site->id,
-                            'session_id' => $session->id,
                             'hostname' => $site->domain,
                             'pathname' => $page,
                             'viewed_at' => $pageviewTime,
                             'is_entry' => $pageIndex === 0,
                             'is_exit' => $pageIndex === count($pages) - 1,
-                        ]);
+                        ];
                         // Increment time for next pageview
                         $pageviewTime->addSeconds(rand(5, 30));
                     }
                 }
+            }
+
+            // Batch insert sessions at the end of each day
+            if (!empty($sessionBatch)) {
+                Session::insert($sessionBatch);
+
+                // Now insert pageviews if we have any
+                if (!empty($pageviewBatch)) {
+                    $finalPageviews = [];
+                    foreach ($pageviewBatch as $pv) {
+                        $key = $pv['visitor_id'] . '|' . $pv['started_at']->timestamp;
+                        $sessionId = $sessionIdMap[$key] ?? null;
+
+                        if ($sessionId) {
+                            $finalPageviews[] = [
+                                'site_id' => $pv['site_id'],
+                                'session_id' => $sessionId,
+                                'hostname' => $pv['hostname'],
+                                'pathname' => $pv['pathname'],
+                                'viewed_at' => $pv['viewed_at'],
+                                'is_entry' => $pv['is_entry'],
+                                'is_exit' => $pv['is_exit'],
+                            ];
+                        }
+                    }
+
+                    if (!empty($finalPageviews)) {
+                        Pageview::insert($finalPageviews);
+                    }
+                    $pageviewBatch = [];
+                }
+
+                $sessionBatch = [];
+                $sessionIdMap = [];
             }
 
             $this->command->info("Generated sessions for {$date->format('Y-m-d')}");
