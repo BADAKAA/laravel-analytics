@@ -91,6 +91,10 @@ class ApiController extends Controller {
             $geoData = IpLocationService::fromIp($ip);
             $this->recordTiming('geoip_lookup', $t8);
         }
+        
+        $countryCode = $geoData['country_code'] ?? null;
+        $subdivisionCode = $geoData['subdivision_code'] ?? null;
+        $city = $geoData['city'] ?? null;
 
         try {
             $t_session_upsert = microtime(true);
@@ -112,9 +116,9 @@ class ApiController extends Controller {
                     'referrer' => $validated['referrer'] ?? null,
                     'referrer_domain' => $referrerDomain,
                     'channel' => $channel,
-                    'country_code' => $geoData['country_code'] ?? null,
-                    'subdivision_code' => $geoData['subdivision_code'] ?? null,
-                    'city' => $geoData['city'] ?? null,
+                    'country_code' => $countryCode,
+                    'subdivision_code' => $subdivisionCode,
+                    'city' => $city,
                     'browser' => $browserInfo['name'],
                     'browser_version' => $browserInfo['version'],
                     'os' => $browserInfo['os'],

@@ -24,4 +24,21 @@ return [
     |
     */
     'max_session_duration' => env('ANALYTICS_MAX_SESSION_DURATION', 1800),
+
+    /*
+    |--------------------------------------------------------------------------
+    | Geolocation
+    |--------------------------------------------------------------------------
+    |
+    | Locating users by their IP addresses (especially via third-party services)
+    | comes with additional privacy considerations. Do not enable this feature
+    | without documented legitimate interest and GDPR impact assessment.
+    |
+    */
+    'geoip' => [
+        'enabled' => env('ANALYTICS_GEOIP_ENABLED', false),
+        'use_local_db' => env('ANALYTICS_USE_LOCAL_GEOIP', false),
+        'rate_limit' => env('ANALYTICS_GEOIP_RATE_LIMIT', 45),
+        'endpoint' => env('ANALYTICS_GEOIP_ENDPOINT', 'https://ip-api.com/json/{ip}?fields=countryCode,region,city,query,status'),
+    ],
 ];
