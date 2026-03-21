@@ -50,7 +50,7 @@ class DashboardController extends Controller
             $endDate = Carbon::parse($customEnd);
         }
 
-        return inertia('Dashboard', [
+        return inertia('dashboard/Dashboard', [
             'sites' => $sites,
             'selectedSiteId' => $siteId,
             'timeframe' => $timeframe,

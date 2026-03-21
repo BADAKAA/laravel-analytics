@@ -13,6 +13,7 @@ import AppLayout from '@/layouts/AppLayout.vue';
 import { compactNumber, ucfirst } from '@/lib/utils';
 import { dashboard } from '@/routes';
 import type { BreadcrumbItem } from '@/types';
+import MetricCards from './partials/MetricCards.vue';
 
 interface Site {
     id: number;
@@ -127,8 +128,8 @@ const hasFilters = computed(() => Object.keys(activeFilters.value).length > 0);
 
 const fetchMetrics = async () => {
     if (!selectedSiteId.value) {
-return;
-}
+        return;
+    }
 
     isLoading.value = true;
 
@@ -218,9 +219,6 @@ const onChartReset = () => {
     refreshData();
 };
 
-const onMetricCardClick = (metric: 'visitors' | 'visits' | 'pageviews' | 'bounce_rate' | 'avg_duration' | 'views_per_visit') => {
-    selectedChartMetric.value = metric;
-};
 
 const onFilterApply = (filterType: string, value: string) => {
     if (value) {
@@ -263,17 +261,17 @@ let pageTabs = usePage().props.pageviewsEnabled
         category: 'top_pages',
     }]
     : [];
-pageTabs = [ ...pageTabs,
-    {
-        id: 'entry_pages',
-        label: 'Entry Pages',
-        category: 'entry_pages',
-    },
-    {
-        id: 'exit_pages',
-        label: 'Exit Pages',
-        category: 'exit_pages',
-    },
+pageTabs = [...pageTabs,
+{
+    id: 'entry_pages',
+    label: 'Entry Pages',
+    category: 'entry_pages',
+},
+{
+    id: 'exit_pages',
+    label: 'Exit Pages',
+    category: 'exit_pages',
+},
 ];
 </script>
 
@@ -287,36 +285,37 @@ pageTabs = [ ...pageTabs,
             <div class="border-b border-sidebar-border/70 p-4 dark:border-sidebar-border">
                 <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div class="flex flex-wrap gap-4">
-                    <!-- Site Dropdown -->
-                    <div class="flex items-center gap-2">
-                        <div class="grid gap-2">
-                            <Label for="site">Site</Label>
-                            <Select :defaultValue="selectedSiteId?.toString()">
-                                <SelectTrigger class="w-64">
-                                    <SelectValue />
-                                </SelectTrigger>
-                                <SelectContent>
-                                    <SelectItem v-for="site in sites" :key="site.id" :value="site.id.toString()"
-                                        @click="onSiteChange(site.id.toString())">
-                                        {{ site.name }}
-                                    </SelectItem>
-                                </SelectContent>
-                            </Select>
+                        <!-- Site Dropdown -->
+                        <div class="flex items-center gap-2">
+                            <div class="grid gap-2">
+                                <Label for="site">Site</Label>
+                                <Select :defaultValue="selectedSiteId?.toString()">
+                                    <SelectTrigger class="w-64">
+                                        <SelectValue />
+                                    </SelectTrigger>
+                                    <SelectContent>
+                                        <SelectItem v-for="site in sites" :key="site.id" :value="site.id.toString()"
+                                            @click="onSiteChange(site.id.toString())">
+                                            {{ site.name }}
+                                        </SelectItem>
+                                    </SelectContent>
+                                </Select>
+                            </div>
                         </div>
-                    </div>
-                    <!-- Filters -->
-                     <div class="flex gap-4" v-if="hasFilters">
-                        <div class="grid gap-2">
-                            <Label>Filters</Label>
-                            <div class="flex flex-wrap items-center gap-2">
-                                <Button v-for="(value, key) in activeFilters" :key="key" variant="outline" 
-                                    @click="onFilterApply(key, '')">
-                                    {{ ucfirst(key) }}: {{ value }} <XIcon class="ml-1 h-3 w-3" />
-                                </Button>
+                        <!-- Filters -->
+                        <div class="flex gap-4" v-if="hasFilters">
+                            <div class="grid gap-2">
+                                <Label>Filters</Label>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <Button v-for="(value, key) in activeFilters" :key="key" variant="outline"
+                                        @click="onFilterApply(key, '')">
+                                        {{ ucfirst(key) }}: {{ value }}
+                                        <XIcon class="ml-1 h-3 w-3" />
+                                    </Button>
 
-                     </div>
-                     </div>
-                     </div>
+                                </div>
+                            </div>
+                        </div>
                     </div>
 
                     <!-- Timeframe Selector -->
@@ -346,73 +345,9 @@ pageTabs = [ ...pageTabs,
 
             <!-- Main Content -->
             <div class="flex-1 gap-4 overflow-auto p-4">
-                <!-- Summary Chart and Metrics -->
                 <div>
-                    <!-- Metrics Cards -->
-                    <div class="mb-6 grid md:grid-cols-2 lg:grid-cols-6 divide-x border rounded-lg">
-                        <div class="cursor-pointer p-4 transition-all"
-                            :class="selectedChartMetric === 'visitors' ? 'bg-neutral-100 dark:bg-neutral-900/30' : ''"
-                            @click="onMetricCardClick('visitors')">
-                            <div class="text-xs font-medium text-gray-600 dark:text-gray-400"
-                                :class="selectedChartMetric === 'visitors' ? 'text-blue-600 dark:text-blue-400 underline' : ''">
-                                Unique Visitors</div>
-                            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">
-                                {{ compactNumber(metrics?.visitors ?? unfilteredMetrics?.visitors ?? 0) }}
-                            </div>
-                        </div>
-
-                        <div class="cursor-pointer p-4 transition-all"
-                            :class="selectedChartMetric === 'visits' ? 'bg-neutral-100 dark:bg-neutral-900/30' : ''"
-                            @click="onMetricCardClick('visits')">
-                            <div class="text-xs font-medium text-gray-600 dark:text-gray-400"
-                                :class="selectedChartMetric === 'visits' ? 'text-blue-600 dark:text-blue-400 underline' : ''">
-                                Sessions</div>
-                            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">
-                                {{ compactNumber(metrics?.visits ?? unfilteredMetrics?.visits ?? 0) }}
-                            </div>
-                        </div>
-
-                        <div class="cursor-pointer p-4 transition-all"
-                            :class="selectedChartMetric === 'pageviews' ? 'bg-neutral-100 dark:bg-neutral-900/30' : ''"
-                            @click="onMetricCardClick('pageviews')">
-                            <div class="text-xs font-medium text-gray-600 dark:text-gray-400"
-                                :class="selectedChartMetric === 'pageviews' ? 'text-blue-600 dark:text-blue-400 underline' : ''">
-                                Pageviews</div>
-                            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">
-                                {{ compactNumber(metrics?.pageviews ?? unfilteredMetrics?.pageviews ?? 0) }}
-                            </div>
-                        </div>
-
-                        <div class="cursor-pointer p-4 transition-all"
-                            :class="selectedChartMetric === 'bounce_rate' ? 'bg-neutral-100 dark:bg-neutral-900/30' : ''"
-                            @click="onMetricCardClick('bounce_rate')">
-                            <div class="text-xs font-medium text-gray-600 dark:text-gray-400"
-                                :class="selectedChartMetric === 'bounce_rate' ? 'text-blue-600 dark:text-blue-400 underline' : ''">
-                                Bounce Rate</div>
-                            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">{{
-                                metrics?.bounce_rate ?? unfilteredMetrics?.bounce_rate ?? 0 }}%</div>
-                        </div>
-
-                        <div class="cursor-pointer p-4 transition-all"
-                            :class="selectedChartMetric === 'avg_duration' ? 'bg-neutral-100 dark:bg-neutral-900/30' : ''"
-                            @click="onMetricCardClick('avg_duration')">
-                            <div class="text-xs font-medium text-gray-600 dark:text-gray-400"
-                                :class="selectedChartMetric === 'avg_duration' ? 'text-blue-600 dark:text-blue-400 underline' : ''">
-                                Avg. Duration</div>
-                            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">{{
-                                metrics?.avg_duration ?? unfilteredMetrics?.avg_duration ?? 0 }}s</div>
-                        </div>
-
-                        <div class="cursor-pointer p-4 transition-all"
-                            :class="selectedChartMetric === 'views_per_visit' ? 'bg-neutral-100 dark:bg-neutral-900/30' : ''"
-                            @click="onMetricCardClick('views_per_visit')">
-                            <div class="text-xs font-medium text-gray-600 dark:text-gray-400"
-                                :class="selectedChartMetric === 'views_per_visit' ? 'text-blue-600 dark:text-blue-400 underline' : ''">
-                                Views per Session</div>
-                            <div class="mt-2 text-2xl font-bold text-gray-900 dark:text-gray-100">{{
-                                metrics?.views_per_visit ?? unfilteredMetrics?.views_per_visit ?? 0 }}</div>
-                        </div>
-                    </div>
+                    <MetricCards :metrics="metrics" :unfilteredMetrics="unfilteredMetrics"
+                        v-model="selectedChartMetric" />
                     <SummaryChart :data="chartData" :isLoading="isLoading" :metric="selectedChartMetric"
                         @zoom="onChartZoom" @filter="onFilterApply" />
                 </div>
@@ -436,12 +371,13 @@ pageTabs = [ ...pageTabs,
                             label: 'Campaigns',
                             category: 'utm_campaigns',
                         },
-                    ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters"
-                        :isLoading="isLoading" @filter="onFilterApply" @open-details="onOpenDetailModal" />
+                    ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" :isLoading="isLoading"
+                        @filter="onFilterApply" @open-details="onOpenDetailModal" />
 
                     <!-- Panel 2: Top Pages/Entry/Exit Pages -->
-                    <TabbedDataPanel title="Pages" bg-class="bg-rose-100 dark:bg-rose-900" :tabs="pageTabs" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters"
-                        :isLoading="isLoading" @filter="onFilterApply" @open-details="onOpenDetailModal" />
+                    <TabbedDataPanel title="Pages" bg-class="bg-rose-100 dark:bg-rose-900" :tabs="pageTabs"
+                        :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" :isLoading="isLoading"
+                        @filter="onFilterApply" @open-details="onOpenDetailModal" />
 
                     <!-- Panel 3: Countries/Map -->
                     <TabbedDataPanel title="Locations" bg-class="bg-emerald-100 dark:bg-emerald-900" :tabs="[
@@ -465,8 +401,8 @@ pageTabs = [ ...pageTabs,
                             label: 'Cities',
                             category: 'cities',
                         },
-                    ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters"
-                        :isLoading="isLoading" @filter="onFilterApply" @open-details="onOpenDetailModal" />
+                    ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" :isLoading="isLoading"
+                        @filter="onFilterApply" @open-details="onOpenDetailModal" />
 
                     <!-- Panel 4: Browsers/OS/Devices -->
                     <TabbedDataPanel title="Technical" :tabs="[
@@ -485,13 +421,13 @@ pageTabs = [ ...pageTabs,
                             label: 'Devices',
                             category: 'devices',
                         },
-                    ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters"
-                        :isLoading="isLoading" @filter="onFilterApply" @open-details="onOpenDetailModal" />
+                    ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" :isLoading="isLoading"
+                        @filter="onFilterApply" @open-details="onOpenDetailModal" />
                 </div>
 
                 <!-- Detail Modal -->
-                <DetailModal ref="detailModal" :category="detailModalCategory"
-                    :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" />
+                <DetailModal ref="detailModal" :category="detailModalCategory" :siteId="selectedSiteId"
+                    :dateRange="dateRange" :filters="activeFilters" />
             </div>
         </div>
     </AppLayout>
