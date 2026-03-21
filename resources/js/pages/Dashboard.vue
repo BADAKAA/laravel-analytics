@@ -427,8 +427,32 @@ onBeforeUnmount(() => {
                     ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters"
                         :isLoading="isLoading" @filter="onFilterApply" @open-details="onOpenDetailModal" />
 
-                  
-                    <!-- Panel 3: Browsers/OS/Devices -->
+                    <!-- Panel 3: Countries/Map -->
+                    <TabbedDataPanel title="Locations" bg="bg-emerald-100 dark:bg-emerald-900'" :tabs="[
+                        {
+                            id: 'map',
+                            label: 'Map',
+                            category: 'map',
+                        },
+                        {
+                            id: 'countries',
+                            label: 'Countries',
+                            category: 'countries',
+                        },
+                        {
+                            id: 'regions',
+                            label: 'Regions',
+                            category: 'regions',
+                        },
+                        {
+                            id: 'cities',
+                            label: 'Cities',
+                            category: 'cities',
+                        },
+                    ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters"
+                        :isLoading="isLoading" @filter="onFilterApply" @open-details="onOpenDetailModal" />
+
+                    <!-- Panel 4: Browsers/OS/Devices -->
                     <TabbedDataPanel title="Technical" :tabs="[
                         {
                             id: 'browsers',

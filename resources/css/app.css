@@ -170,3 +170,8 @@
         @apply bg-background text-foreground;
     }
 }
+
+
+.leaflet-container {
+    font-family: var(--font-sans) !important;
+}

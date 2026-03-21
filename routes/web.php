@@ -22,6 +22,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/entry-pages', [DashboardController::class, 'getEntryPages']);
         Route::get('/exit-pages', [DashboardController::class, 'getExitPages']);
         Route::get('/countries', [DashboardController::class, 'getCountries']);
+        Route::post('/countries-geojson', [DashboardController::class, 'postCountriesGeoJson']);
         Route::get('/regions', [DashboardController::class, 'getRegions']);
         Route::get('/cities', [DashboardController::class, 'getCities']);
         Route::get('/browsers', [DashboardController::class, 'getBrowsers']);

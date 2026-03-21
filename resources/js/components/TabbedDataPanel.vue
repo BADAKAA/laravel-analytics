@@ -5,6 +5,7 @@ import { ref, computed, onMounted, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { codeToName } from '@/lib/utils';
+import CountryMap from './CountryMap.vue';
 import BrowserIcon from './icons/BrowserIcon.vue';
 import ChannelIcon from './icons/ChannelIcon.vue';
 import DeviceIcon from './icons/DeviceIcon.vue';
@@ -224,7 +225,13 @@ const regionCodeToName = (code: string): string => {
 
         <!-- Tab Content -->
         <div class="flex-1 p-4 group border rounded-2xl shadow-sm mt-3" ref="tabBody">
-            <div>
+            <!-- Map View -->
+            <CountryMap v-if="currentCategory === 'map'" :siteId="props.siteId" :dateRange="props.dateRange"
+                :filters="props.filters" :isLoading="props.isLoading"
+                @filter="(type, value) => emit('filter', type, value)"
+                @openDetails="(category) => emit('openDetails', category)" />
+            <!-- List View -->
+            <div v-else>
                 <div v-if="dataLoading || isLoading" class="flex h-48 items-center justify-center">
                     <LoaderCircle class="h-8 w-8 animate-spin opacity-30" />
                 </div>

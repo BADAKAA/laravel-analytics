@@ -501,6 +501,63 @@ class DashboardController extends Controller
     }
 
     /**
+     * Get country GeoJSON features for a specific set of country codes.
+     */
+    public function postCountriesGeoJson(Request $request)
+    {
+        $validated = $request->validate([
+            'countries' => ['required', 'array'],
+            'countries.*' => ['string', 'size:2'],
+        ]);
+
+        $requestedCodes = collect($validated['countries'])
+            ->map(fn ($code) => strtoupper(trim($code)))
+            ->filter(fn ($code) => $code !== '' && $code !== '-99')
+            ->unique()
+            ->values();
+
+        if ($requestedCodes->isEmpty()) {
+            return response()->json([
+                'type' => 'FeatureCollection',
+                'features' => [],
+            ]);
+        }
+
+        $geoJsonPath = public_path('countries.geojson');
+        if (!File::exists($geoJsonPath)) {
+            return response()->json([
+                'type' => 'FeatureCollection',
+                'features' => [],
+            ], 404);
+        }
+
+        $geoJson = json_decode(File::get($geoJsonPath), true);
+        if (!is_array($geoJson) || !isset($geoJson['features']) || !is_array($geoJson['features'])) {
+            return response()->json([
+                'error' => 'Invalid countries GeoJSON source',
+            ], 500);
+        }
+
+        $requestedCodeLookup = $requestedCodes->flip();
+
+        $filteredFeatures = array_values(array_filter($geoJson['features'], function ($feature) use ($requestedCodeLookup) {
+            if (!is_array($feature)) {
+                return false;
+            }
+
+            $code = $this->countryCodeFromGeoJsonFeature($feature);
+
+            return $code !== '' && $requestedCodeLookup->has($code);
+        }));
+
+        return response()->json([
+            'type' => 'FeatureCollection',
+            'name' => $geoJson['name'] ?? 'countries',
+            'features' => $filteredFeatures,
+        ]);
+    }
+
+    /**
      * Get regions data
      */
     public function getRegions(Request $request)
