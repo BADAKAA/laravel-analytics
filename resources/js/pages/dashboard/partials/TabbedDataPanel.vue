@@ -6,11 +6,11 @@ import { Button } from '@/components/ui/button';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { codeToName } from '@/lib/utils';
 import CountryMap from './CountryMap.vue';
-import BrowserIcon from './icons/BrowserIcon.vue';
-import ChannelIcon from './icons/ChannelIcon.vue';
-import DeviceIcon from './icons/DeviceIcon.vue';
-import OSIcon from './icons/OSIcon.vue';
-import SourceIcon from './icons/SourceIcon.vue';
+import BrowserIcon from '@/components/icons/BrowserIcon.vue';
+import ChannelIcon from '@/components/icons/ChannelIcon.vue';
+import DeviceIcon from '@/components/icons/DeviceIcon.vue';
+import OSIcon from '@/components/icons/OSIcon.vue';
+import SourceIcon from '@/components/icons/SourceIcon.vue';
 
 interface DataItem {
     [name: string]: string | number | undefined;

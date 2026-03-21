@@ -3,14 +3,14 @@ import { Head, router, usePage } from '@inertiajs/vue3';
 import { useUrlSearchParams } from '@vueuse/core';
 import { XIcon } from 'lucide-vue-next';
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
-import DetailModal from '@/components/DetailModal.vue';
-import SummaryChart from '@/components/SummaryChart.vue';
-import TabbedDataPanel from '@/components/TabbedDataPanel.vue';
+import DetailModal from './partials/DetailModal.vue';
+import SummaryChart from './partials/SummaryChart.vue';
+import TabbedDataPanel from './partials/TabbedDataPanel.vue';
 import { Button } from '@/components/ui/button';
 import Label from '@/components/ui/label/Label.vue';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import AppLayout from '@/layouts/AppLayout.vue';
-import { compactNumber, ucfirst } from '@/lib/utils';
+import { ucfirst } from '@/lib/utils';
 import { dashboard } from '@/routes';
 import type { BreadcrumbItem } from '@/types';
 import MetricCards from './partials/MetricCards.vue';
@@ -281,11 +281,10 @@ pageTabs = [...pageTabs,
 
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex h-full flex-1 flex-col overflow-x-auto">
-            <!-- Header: Site Selector and Time Range -->
+
             <div class="border-b border-sidebar-border/70 p-4 dark:border-sidebar-border">
                 <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div class="flex flex-wrap gap-4">
-                        <!-- Site Dropdown -->
                         <div class="flex items-center gap-2">
                             <div class="grid gap-2">
                                 <Label for="site">Site</Label>
@@ -302,9 +301,9 @@ pageTabs = [...pageTabs,
                                 </Select>
                             </div>
                         </div>
-                        <!-- Filters -->
-                        <div class="flex gap-4" v-if="hasFilters">
-                            <div class="grid gap-2">
+
+                        <div class="flex items-center">
+                            <div class="grid gap-2"v-if="hasFilters">
                                 <Label>Filters</Label>
                                 <div class="flex flex-wrap items-center gap-2">
                                     <Button v-for="(value, key) in activeFilters" :key="key" variant="outline"
@@ -312,13 +311,11 @@ pageTabs = [...pageTabs,
                                         {{ ucfirst(key) }}: {{ value }}
                                         <XIcon class="ml-1 h-3 w-3" />
                                     </Button>
-
                                 </div>
                             </div>
                         </div>
                     </div>
 
-                    <!-- Timeframe Selector -->
                     <div class="flex items-center gap-2">
                         <div class="grid gap-2">
                             <Label for="timeframe">Timeframe</Label>
@@ -336,7 +333,6 @@ pageTabs = [...pageTabs,
                         </div>
                     </div>
 
-                    <!-- Reset Zoom Button (shown if zoomed) -->
                     <Button v-if="hasZoomedChart" variant="outline" @click="onChartReset">
                         Reset Zoom
                     </Button>
@@ -352,9 +348,7 @@ pageTabs = [...pageTabs,
                         @zoom="onChartZoom" @filter="onFilterApply" />
                 </div>
 
-                <!-- Data Panels Grid (4 panels with tabs) -->
                 <div class="grid gap-6 lg:grid-cols-2 ">
-                    <!-- Panel 1: Channels/Sources/UTM Campaigns -->
                     <TabbedDataPanel title="Traffic Sources" bg-class="bg-blue-100 dark:bg-green-900" :tabs="[
                         {
                             id: 'channels',
@@ -374,12 +368,10 @@ pageTabs = [...pageTabs,
                     ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" :isLoading="isLoading"
                         @filter="onFilterApply" @open-details="onOpenDetailModal" />
 
-                    <!-- Panel 2: Top Pages/Entry/Exit Pages -->
                     <TabbedDataPanel title="Pages" bg-class="bg-rose-100 dark:bg-rose-900" :tabs="pageTabs"
                         :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" :isLoading="isLoading"
                         @filter="onFilterApply" @open-details="onOpenDetailModal" />
 
-                    <!-- Panel 3: Countries/Map -->
                     <TabbedDataPanel title="Locations" bg-class="bg-emerald-100 dark:bg-emerald-900" :tabs="[
                         {
                             id: 'map',
@@ -404,7 +396,6 @@ pageTabs = [...pageTabs,
                     ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" :isLoading="isLoading"
                         @filter="onFilterApply" @open-details="onOpenDetailModal" />
 
-                    <!-- Panel 4: Browsers/OS/Devices -->
                     <TabbedDataPanel title="Technical" :tabs="[
                         {
                             id: 'browsers',
@@ -425,7 +416,6 @@ pageTabs = [...pageTabs,
                         @filter="onFilterApply" @open-details="onOpenDetailModal" />
                 </div>
 
-                <!-- Detail Modal -->
                 <DetailModal ref="detailModal" :category="detailModalCategory" :siteId="selectedSiteId"
                     :dateRange="dateRange" :filters="activeFilters" />
             </div>
