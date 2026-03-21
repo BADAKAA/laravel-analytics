@@ -263,7 +263,7 @@ onBeforeUnmount(() => {
     <AppLayout :breadcrumbs="breadcrumbs">
         <div class="flex h-full flex-1 flex-col overflow-x-auto">
             <!-- Header: Site Selector and Time Range -->
-            <div class="border-b border-sidebar-border/70 bg-white p-4 dark:border-sidebar-border dark:bg-slate-950">
+            <div class="border-b border-sidebar-border/70 p-4 dark:border-sidebar-border">
                 <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
                     <div class="flex flex-wrap gap-4">
                     <!-- Site Dropdown -->
@@ -386,9 +386,9 @@ onBeforeUnmount(() => {
                 </div>
 
                 <!-- Data Panels Grid (4 panels with tabs) -->
-                <div class="grid gap-6 lg:grid-cols-2">
+                <div class="grid gap-6 lg:grid-cols-2 ">
                     <!-- Panel 1: Channels/Sources/UTM Campaigns -->
-                    <TabbedDataPanel title="Traffic Sources" bg="bg-blue-100 dark:bg-indogo-800'" :tabs="[
+                    <TabbedDataPanel title="Traffic Sources" bg-class="bg-blue-100 dark:bg-green-900" :tabs="[
                         {
                             id: 'channels',
                             label: 'Channels',
@@ -408,7 +408,7 @@ onBeforeUnmount(() => {
                         :isLoading="isLoading" @filter="onFilterApply" @open-details="onOpenDetailModal" />
 
                     <!-- Panel 2: Top Pages/Entry/Exit Pages -->
-                    <TabbedDataPanel title="Pages" bg="bg-rose-100 dark:bg-rose-900'" :tabs="[
+                    <TabbedDataPanel title="Pages" bg-class="bg-rose-100 dark:bg-rose-900" :tabs="[
                         // {
                         //     id: 'top_pages',
                         //     label: 'Top Pages',
@@ -428,7 +428,7 @@ onBeforeUnmount(() => {
                         :isLoading="isLoading" @filter="onFilterApply" @open-details="onOpenDetailModal" />
 
                     <!-- Panel 3: Countries/Map -->
-                    <TabbedDataPanel title="Locations" bg="bg-emerald-100 dark:bg-emerald-900'" :tabs="[
+                    <TabbedDataPanel title="Locations" bg-class="bg-emerald-100 dark:bg-emerald-900" :tabs="[
                         {
                             id: 'map',
                             label: 'Map',

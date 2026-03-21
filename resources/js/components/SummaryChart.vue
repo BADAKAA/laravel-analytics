@@ -117,10 +117,10 @@ const crosshairTemplate = (datum: ChartDataPoint | undefined, x: number | Date) 
     <div v-else class="relative min-h-80 w-full">
         <!-- Chart Container -->
         <div class="h-80 w-full">
-            <VisXYContainer
+            <VisXYContainer class="chart-container"
                 :data="chartData"
                 :svg-defs="svgDefs"
-                :margin="{ top: 20, bottom: 40, left: 0, right: 20 }"
+                :margin="{ top: 20, bottom: 40, left: 10, right: 20 }"
             >
                 <VisArea
                     :x="xAccessor"
@@ -140,11 +140,13 @@ const crosshairTemplate = (datum: ChartDataPoint | undefined, x: number | Date) 
                 <!-- X Axis only -->
                 <VisAxis
                     type="x"
+                    :tick-line="false"
+                    :domain-line="false"
                     :gridLine="false"
                     :tick-format="(d: number) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })"
                 />
                 <!-- Y Axis without label -->
-                <VisAxis type="y" />
+                <VisAxis type="y" :tick-line="false" :domain-line="false" />
 
                 <VisTooltip />
                 <VisCrosshair
@@ -165,3 +167,9 @@ const crosshairTemplate = (datum: ChartDataPoint | undefined, x: number | Date) 
         </div> -->
     </div>
 </template>
+<style scoped>
+    .dark .chart-container {
+        --vis-axis-grid-color: #222;
+        --vis-axis-grid-line-width: 1px;
+    }
+</style>

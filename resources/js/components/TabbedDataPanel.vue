@@ -36,10 +36,10 @@ const props = defineProps<{
     dateRange: { from: string; to: string };
     filters: Record<string, string>;
     isLoading?: boolean;
-    bg?: string;
+    bgClass?: string;
 }>();
 
-const bg = computed(() => props.bg || 'bg-foreground/5');
+const bg = computed(() => props.bgClass || 'bg-foreground/5');
 
 const emit = defineEmits<{
     filter: [type: string, value: string];
