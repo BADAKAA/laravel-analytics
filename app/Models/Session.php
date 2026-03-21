@@ -65,6 +65,8 @@ class Session extends Model
      * Attempts UPDATE first, then INSERT only if needed.
      * Uses timestamp-based range query instead of DATE() for better index usage.
      * Faster than ORM-based updateOrCreate() approach.
+     * 
+     * Can only be used when there is no max session duration.
      */
     public static function upsertFromPageview(
         int $siteId,

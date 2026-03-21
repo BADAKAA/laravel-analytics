@@ -68,39 +68,35 @@ class ApiController extends Controller {
         );
         $this->recordTiming('classify_channel', $t7);
 
-        $t8 = microtime(true);
-        $geoData = $this->getGeoData($ip);
-        $this->recordTiming('geoip_lookup', $t8);
-
         $t9 = microtime(true);
         $now = now();
         $trackPageViews = config('analytics.track_page_views', true);
         $maxSessionDuration = config('analytics.max_session_duration', 1800);
 
-        // Check if this is a new session
         $existingSession = Session::where('site_id', $validated['site_id'])
             ->where('visitor_id', $visitorId)
             ->orderBy('started_at', 'desc')
             ->first();
         
-        // Check if session has exceeded max duration
-        $isNewSession = false;
+        $isNewSession = !$existingSession;
         if ($existingSession) {
             $sessionDuration = $now->diffInSeconds($existingSession->started_at);
             if ($sessionDuration > $maxSessionDuration) {
                 $isNewSession = true;
             }
-        } else {
-            $isNewSession = true;
+        } 
+
+        $geoData = [];
+        if ($isNewSession) {
+            $t8 = microtime(true);
+            $geoData = $this->getGeoData($ip);
+            $this->recordTiming('geoip_lookup', $t8);
         }
 
         try {
             $t_session_upsert = microtime(true);
-            
-            // If session duration exceeded, force creation of new session
-            if ($isNewSession && $existingSession) {
-                // Create a brand new session (don't update the old one)
-                Session::create([
+            if ($isNewSession) {
+                $session = Session::create([
                     'site_id' => $validated['site_id'],
                     'visitor_id' => $visitorId,
                     'started_at' => $now->toDateTimeString(),
@@ -128,55 +124,18 @@ class ApiController extends Controller {
                     'screen_width' => $validated['screen_width'] ?? null,
                 ]);
             } else {
-                // Normal upsert behavior (update existing session or create if it's truly new)
-                Session::upsertFromPageview(
-                    siteId: $validated['site_id'],
-                    visitorId: $visitorId,
-                    createData: [
-                        'site_id' => $validated['site_id'],
-                        'visitor_id' => $visitorId,
-                        'started_at' => $now->toDateTimeString(),
-                        'duration' => null,
-                        'pageviews' => 1,
-                        'is_bounce' => true,
-                        'entry_page' => $validated['pathname'],
-                        'exit_page' => $validated['pathname'],
-                        'utm_source' => $validated['utm_source'] ?? null,
-                        'utm_medium' => $validated['utm_medium'] ?? null,
-                        'utm_campaign' => $validated['utm_campaign'] ?? null,
-                        'utm_content' => $validated['utm_content'] ?? null,
-                        'utm_term' => $validated['utm_term'] ?? null,
-                        'referrer' => $validated['referrer'] ?? null,
-                        'referrer_domain' => $referrerDomain,
-                        'channel' => $channel,
-                        'country_code' => $geoData['country_code'] ?? null,
-                        'subdivision_code' => $geoData['subdivision_code'] ?? null,
-                        'city' => $geoData['city'] ?? null,
-                        'browser' => $browserInfo['name'],
-                        'browser_version' => $browserInfo['version'],
-                        'os' => $browserInfo['os'],
-                        'os_version' => $browserInfo['os_version'],
-                        'device_type' => $deviceInfo['type'],
-                        'screen_width' => $validated['screen_width'] ?? null,
-                    ],
-                    updateData: [
-                        'pageviews' => DB::raw('pageviews + 1'),
-                        'exit_page' => $validated['pathname'],
-                        'is_bounce' => false,
-                    ]
-                );
+                // Update the existing session
+                $existingSession->update([
+                    'pageviews' => $existingSession->pageviews + 1,
+                    'exit_page' => $validated['pathname'],
+                    'is_bounce' => false,
+                ]);
+                $session = $existingSession;
             }
             $this->recordTiming('session_upsert', $t_session_upsert);
 
-            // Track individual pageviews if enabled
-            if ($trackPageViews) {
+            if ($trackPageViews && $session) {
                 $t_pageview = microtime(true);
-                $session = Session::where('site_id', $validated['site_id'])
-                    ->where('visitor_id', $visitorId)
-                    ->orderBy('started_at', 'desc')
-                    ->first();
-
-                // Create new pageview
                 Pageview::create([
                     'site_id' => $validated['site_id'],
                     'session_id' => $session->id,
