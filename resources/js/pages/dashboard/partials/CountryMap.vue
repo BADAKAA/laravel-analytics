@@ -326,10 +326,10 @@ const initializeMap = async () => {
             minZoom: 2,
             attribution: '&copy; OpenStreetMap contributors',
         }).addTo(mapL.value as any);
-
-        await fetchCountryData();
-        await syncCountryGeoJson();  
     }
+
+    await fetchCountryData();
+    await syncCountryGeoJson();
 
     initialisingMap.value = false;
 };
