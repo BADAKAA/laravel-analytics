@@ -4,12 +4,14 @@ namespace App\Http\Controllers;
 
 use App\Enums\Timeframe;
 use App\Models\Session;
+use App\Models\Site;
 use App\Services\DashboardAggregationService;
 use App\Services\GeoJsonService;
 use App\Services\SessionFilterService;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Gate;
 
 class DashboardController extends Controller
 {
@@ -28,6 +30,9 @@ class DashboardController extends Controller
 
         $siteId = $request->query('site_id') ? (int) $request->query('site_id') : $sites->first()?->id;
         if (!$siteId) return redirect()->route('sites.index');
+
+        $site = Site::findOrFail($siteId);
+        Gate::forUser($user)->authorize('view', $site);
 
         $timeframe = $request->query('timeframe', self::DEFAULT_TIMEFRAME);
         $customStart = $request->query('date_from');
@@ -62,9 +67,11 @@ class DashboardController extends Controller
     {
         $siteId = $request->query('site_id');
         
-        if (!$siteId) {
-            return response()->json(['count' => 0]);
-        }
+        if (!$siteId) return response()->json(['count' => 0]);
+
+        // skip permission check for performance reasons, data is not sensitice
+        // $site = Site::findOrFail($siteId);
+        // Gate::forUser(Auth::user())->authorize('view', $site);
 
         $count = Session::where('site_id', $siteId)
             ->where('started_at', '>=', Carbon::now()->subMinutes(self::REALTIME_INTERVAL_MINUTES))
@@ -103,6 +110,9 @@ class DashboardController extends Controller
             'filters' => ['array'],
             'filters.*' => ['nullable', 'string'],
         ]);
+
+        $site = Site::findOrFail($validated['site_id']);
+        Gate::forUser(Auth::user())->authorize('view', $site);
 
         $siteId = $validated['site_id'];
         $startDate = Carbon::parse($validated['date_from']);
@@ -228,6 +238,9 @@ class DashboardController extends Controller
     private function buildBaseQuery(Request $request): array
     {
         $siteId = $request->query('site_id');
+        $site = Site::findOrFail($siteId);
+        Gate::forUser(Auth::user())->authorize('view', $site);
+
         $filters = $this->parseFilters($request);
         $startDate = Carbon::parse($request->query('date_from'));
         $endDate = Carbon::parse($request->query('date_to'));
