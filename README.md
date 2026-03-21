@@ -1,96 +1,214 @@
 # Laravel Analytics
 
-## Documentation
+A privacy-focused analytics platform built with **Laravel**, **Inertia**, and **Vue**. Track page views, sessions, and visitor behavior with a lightweight script that collects essential analytics data for your websites.
+
+
+![Dashboard Preview](screenshot.png)
+
+## Features
+
+- **Session-based Tracking**: Server-side session management with automatic session detection
+- **Page View Analytics**: Optional page-level tracking for granular analysis
+- **Geographic Data**: Built-in GeoIP support to track visitor locations
+- **Device Detection**: Identifies browser, OS, and device type (mobile, tablet, desktop)
+- **UTM Parameter Support**: Track marketing campaigns with automatic UTM parsing
+- **Channel Classification**: Automatically categorize traffic sources
+- **Interactive Dashboard**: Beautiful Vue.js-based dashboard with real-time data visualization
+- **Country Map**: GeoJSON-powered interactive world map with visitor distribution
+
+## Technology Stack
+
+- **Backend**: [Laravel 11](https://laravel.com) - PHP web framework
+- **Frontend**: [Inertia.js](https://inertiajs.com) + [Vue.js 3](https://vuejs.org) - Reactive UI framework
+- **Client Tracking**: Minimal JavaScript client script (~1KB) for external sites
+- **Geolocation**: Config-driven IP geolocation (local GeoIP2 DB or API provider)
+- **Database**: SQLite/MySQL/PostgreSQL supported
+
+
+## Getting Started
+
+### Server Setup
+This webapp can be deployed on any shared hosting which can run php. See the [deployment section](#deployment) for more details.
+
+#### Requirements
+
+- PHP 8.3 or higher
+- Composer (optional)
+- Node.js & npm/pnpm (optional)
+- SQL database (optional)
+
+
+
+
+### Client Script Integration
+
+To track analytics on your website, add a single script tag before the closing `</body>` tag:
+
+```html
+<script src="https://{your-analytics-domain.com}/client.js?site_id=123"></script>
+```
+
+Replace:
+- `{your-analytics-domain.com}` with your analytics server URL
+- `123` with your actual site ID from the analytics dashboard
+
+That's it! The tracking script will automatically:
+- Track page views
+- Detect sessions based on visitor fingerprinting
+- Capture browser and device information
+- Parse UTM parameters for campaign tracking
+- Send data to your analytics server
+
+#### Optional Parameters
+
+The script automatically captures:
+- **Page pathname** - current page URL
+- **Referrer** - previous page (if available)
+- **Screen width** - device width (for device type detection)
+- **UTM parameters** - utm_source, utm_medium, utm_campaign, utm_content, utm_term
+
+No additional page view events need to be manually triggered.
+
+### Page View Tracking
+
+This application tracks visits at two levels:
+
+**Sessions**: Every visitor creates a session that captures:
+- Entry and exit pages
+- Page count within the session
+- Session duration
+- Traffic source and channel
+
+**Individual Page Views** *(Optional)*:
+When enabled in configuration, each page view is individually recorded. This provides more granular filtering and detailed page-level analysis but requires more database storage and has higher performance requirements.
+
+Page view tracking is enabled by default to allow tracking of top pages on a given day and filtering sessions by pages. However, for most use cases, session-based analytics can provide sufficient insight with optimal performance.
+
+
+### Geolocation Configuration
+
+Geolocation is disabled by default and controlled through `config/analytics.php`:
+
+- `geoip.enabled`: Enables/disables all IP geolocation lookups.
+- `geoip.has_local_db`: When `true`, the app tries the local GeoIP2 database first.
+- `geoip.endpoint`: API endpoint used when local DB is disabled/unavailable.
+- `geoip.rate_limit`: Rate limit used for provider API lookups.
+
+Default provider endpoint:
+- [ip-api.com](https://ip-api.com/)
+
+If you want local database lookups:
+
+1. Create a MaxMind account and download `GeoLite2-City.mmdb`
+2. Place the file in `storage/app/GeoLite2-City.mmdb`
+3. Install the GeoIP2 PHP library:
+   ```bash
+   composer require geoip2/geoip2
+   ```
+
+Provider terms notice:
+- Before enabling API-based geolocation, review and comply with your provider's terms and usage limits (including [ip-api.com terms](https://ip-api.com/)).
+
+## Legal Disclaimer
+
+**Important**: This project implements analytics collection similar to privacy-focused services like [Plausible.io](https://plausible.io). However, depending on your jurisdiction and the regions your websites serve, **you may be legally required to obtain user consent before tracking**.
+
+**Legal Responsibility**: The authors and contributors of this project cannot be held liable for any legal issues arising from your use of this software. **It is your responsibility to**:
+- Review your local and international privacy laws (GDPR, CCPA, PECR, ePrivacy Directive, etc.)
+- Obtain proper user consent where required
+- Display clear privacy policies explaining data collection
+- Provide users with the ability to opt-out
+- Ensure compliance with applicable data protection regulations
+
+Always consult with a legal professional regarding your specific compliance obligations.
+
+## Deployment
+
+For production deployment instructions, consult the [Laravel Deployment Documentation](https://laravel.com/docs/13.x/deployment).
+
+### Building for Deployment
+
+If your hosting provider doesn't support Composer or Node.js, you can build the application locally and upload the compiled files:
+
+1. Complete all installation and build steps locally (steps 1-7 in Development section)
+2. Run `pnpm run build` to generate production assets
+3. Upload the entire project to your hosting provider *(excluding node_modules)*
+4. Run `php artisan migrate` on the server to set up the database
+5. Set appropriate permissions for `storage/` and `bootstrap/cache/` directories
+
+The pre-built assets will be available in the `public/build/` directory and ready to serve.
+
+## Development
+#### Installation
+
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd analytics
+   ```
+
+2. **Install PHP dependencies**
+   ```bash
+   composer install
+   ```
+
+3. **Install JavaScript dependencies**
+   ```bash
+   pnpm install
+   ```
+
+4. **Setup environment**
+   ```bash
+   cp .env.example .env
+   php artisan key:generate
+   ```
+
+5. **Configure your database** in `.env`:
+   ```
+   DB_CONNECTION=mysql
+   DB_HOST=127.0.0.1
+   DB_PORT=3306
+   DB_DATABASE=analytics
+   DB_USERNAME=root
+   DB_PASSWORD=
+   ```
+
+6. **Run migrations**
+   ```bash
+   php artisan migrate
+   ```
+
+7. **Build assets**
+   ```bash
+   pnpm run build
+   ```
+
+8. **Start the development server**
+   ```bash
+   php artisan serve
+   ```
+   The application will be available at `http://localhost:8000`
+
+ For local development, use the included development commands:
+
+```bash
+pnpm dev
+```
+
+This starts Vite in watch mode for hot module reloading during development.
+
+## Implementation Details
 
 ### Dashboard GeoJSON Country Map Caching
 
 The country map displays visitor data overlaid on a world map using Leaflet.js and GeoJSON features. To optimize performance and reduce bandwidth, the application implements a two-tier caching strategy:
-- **Server-side filtering** ensures only requested country features from the GeoJSON file are sent
-- **Client-side incremental caching** stores fetched features in IndexedDB and only requests missing countries
+- **[Server-side filtering](app/Http/Controllers/DashboardController.php)** ensures only requested country features from the GeoJSON file are sent
+- **[Client-side incremental caching](resources/js/components/CountryMap.vue)** stores fetched features in IndexedDB and only requests missing countries
 
-#### Server-side: POST `/api/dashboard/countries-geojson` | [DashboardController.php](app/Http/Controllers/DashboardController.php)
+## Implementation Details
 
-The `postCountriesGeoJson()` method:
-1. Accepts a POST request with an array of ISO 3166-1 alpha-2 country codes
-2. Validates and normalizes the country codes (uppercase, filters invalid codes like `-99`)
-3. Loads the source GeoJSON file from `public/countries.geojson`
-4. Filters the GeoJSON features to include only the requested countries
-5. Returns a FeatureCollection with only those features
+### Dashboard GeoJSON Country Map Caching
 
-```php
-// Request payload
-POST /api/dashboard/countries-geojson
-{
-  "countries": ["US", "GB", "FR", "DE"]
-}
-
-// Response
-{
-  "type": "FeatureCollection",
-  "features": [
-    { /* US feature */ },
-    { /* GB feature */ },
-    { /* FR feature */ },
-    { /* DE feature */ }
-  ]
-}
-```
-
-**Benefits**:
-- Reduces response payload (only ~50KB per 4 countries vs 2MB+ for full world)
-- Server controls which features are sent
-- Prevents clients from accessing unneeded geographic data
-
-#### Client-side: IndexedDB Caching | [CountryMap.vue](resources/js/components/CountryMap.vue)
-
-The component maintains a persistent cache of country GeoJSON features using [IndexedDB](https://developer.mozilla.org/de/docs/Web/API/IndexedDB_API) with the following key functions:
-
-**`initializeDB()`**
-- Lazily initializes the `analytics-geojson` IndexedDB database
-- Creates a `country-features` object store with `code` as the key
-- Database is created once and reused across page loads
-
-**`loadCountryGeoJsonCache()`**
-- Retrieves all cached country features from IndexedDB
-- Returns a `Record<string, GeoFeature>` where keys are country codes (e.g., "US")
-- Gracefully returns empty object on errors (IndexedDB unavailable, etc.)
-
-**`saveCountryGeoJsonCache(cache)`**
-- Atomically saves the entire cache to IndexedDB
-- Clears old entries and writes new ones in a single transaction
-- Handles errors silently to prevent UI blocking
-
-**`syncCountryGeoJson()`**
-  1. Gets list of requested country codes from current visitor data
-  2. loads missing countries (requested but not cached)
-  3. Renders all requested features on the Leaflet map
-
-
-**Network:**
-- **First time seeing country**: ~1-2KB per country feature fetched
-- **Subsequent views**: Zero network cost (cached locally)
-- **Multiple countries**: Single request bundles all missing countries
-- **Example**: 4 countries = ~8KB request vs 2MB+ full world GeoJSON
-
-**Example Scenarios:**
-
-| Scenario | Cached? | Network Cost | Map Render |
-|----------|---------|--------------|-----------|
-| View dashboard (US, GB, FR) first time | No | ~6-15KB | ~100ms |
-| Same data, refresh page | Yes (IndexedDB) | 0KB | ~50ms |
-| Add Germany (DE) to data | Partial | ~3-5KB | ~80ms |
-| Switch to all-time view (50+ countries) | Partial | Only missing countries | ~200ms |
-
-#### Adding New Countries or Refreshing Cache
-
-**Automatic**:
-- Whenever dashboard data changes, `syncCountryGeoJson()` is called via watchers
-- New countries in visitor data are automatically detected and fetched
-- No manual cache clearing needed
-
-**Manual Cache Clear** (if needed):
-```javascript
-// Clear IndexedDB cache from browser console
-const req = indexedDB.deleteDatabase('analytics-geojson');
-// Reload page to rebuild cache
-```
+The country map displays visitor data overlaid on a world map using Leaflet.js and GeoJSON features. To optimize performance and reduce bandwidth, the application implements a two-tier caching strategy:
+- **[Server-side filtering](app/Http/Controllers/DashboardController.php)** ensures only requested country features from the GeoJSON file are sent
+- **[Client-side incremental caching](resources/js/components/CountryMap.vue)** stores fetched features in IndexedDB and only requests missing countries
