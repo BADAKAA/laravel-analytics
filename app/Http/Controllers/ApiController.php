@@ -5,12 +5,11 @@ namespace App\Http\Controllers;
 use App\Enums\DeviceType;
 use App\Models\Pageview;
 use App\Models\Session;
-use App\Models\Site;
 use App\Services\ChannelClassifier;
+use App\Services\IpLocationService;
 use App\Services\VisitorHash;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\DB;
 
 class ApiController extends Controller {
 
@@ -48,7 +47,7 @@ class ApiController extends Controller {
         $this->recordTiming('parse_browser', $t4);
 
         $t5 = microtime(true);
-        $deviceInfo = $this->parseDeviceInfo($validated['screen_width'] ?? null);
+        $deviceType = DeviceType::fromScreenWidth($validated['screen_width'] ?? null);
         $this->recordTiming('parse_device', $t5);
 
         $t6 = microtime(true);
@@ -89,7 +88,7 @@ class ApiController extends Controller {
         $geoData = [];
         if ($isNewSession) {
             $t8 = microtime(true);
-            $geoData = $this->getGeoData($ip);
+            $geoData = IpLocationService::fromIp($ip);
             $this->recordTiming('geoip_lookup', $t8);
         }
 
@@ -120,7 +119,7 @@ class ApiController extends Controller {
                     'browser_version' => $browserInfo['version'],
                     'os' => $browserInfo['os'],
                     'os_version' => $browserInfo['os_version'],
-                    'device_type' => $deviceInfo['type'],
+                    'device_type' => $deviceType->value,
                     'screen_width' => $validated['screen_width'] ?? null,
                 ]);
             } else {
@@ -210,47 +209,4 @@ class ApiController extends Controller {
         ];
     }
 
-    /**
-     * Detect device type from user agent and screen width.
-     */
-    private function parseDeviceInfo(?int $screenWidth): array {
-        return ['type' => match (true) {
-            !$screenWidth => DeviceType::Unknown->value,
-            $screenWidth < 768 => DeviceType::Mobile->value,
-            $screenWidth < 1024 => DeviceType::Tablet->value,
-            default => DeviceType::Desktop->value,
-        }];
-    }
-
-    /**
-     * Resolve geolocation from IP address.
-     * Uses GeoIP2 if available, otherwise returns empty array.
-     */
-    private function getGeoData(string $ip): array {
-        try {
-            // Try to use GeoIP2 if configured
-            $geoipPath = storage_path('app/GeoLite2-City.mmdb');
-
-            if (file_exists($geoipPath) && class_exists('GeoIp2\\Database\\Reader')) {
-                $reader = new \GeoIp2\Database\Reader($geoipPath);
-                $record = $reader->city($ip);
-
-                return [
-                    'country_code' => $record->country->isoCode,
-                    'subdivision_code' => $record->mostSpecificSubdivision->isoCode
-                        ? $record->country->isoCode . '-' . $record->mostSpecificSubdivision->isoCode
-                        : null,
-                    'city' => $record->city->name,
-                ];
-            }
-        } catch (\Exception $e) {
-            // Silently fail if GeoIP not available
-        }
-
-        return [
-            'country_code' => null,
-            'subdivision_code' => null,
-            'city' => null,
-        ];
-    }
 }

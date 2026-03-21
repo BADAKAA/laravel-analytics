@@ -21,6 +21,16 @@ enum DeviceType: int
         };
     }
 
+    public static function fromScreenWidth(?int $screenWidth): self
+    {
+        return match (true) {
+            !$screenWidth => self::Unknown,
+            $screenWidth < 768 => self::Mobile,
+            $screenWidth < 1024 => self::Tablet,
+            default => self::Desktop,
+        };
+    }
+
     public static function fromLabel(string $label): ?self
     {
         foreach (self::cases() as $case) {
