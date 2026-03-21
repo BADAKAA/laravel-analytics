@@ -196,8 +196,14 @@ const onTimeframeChange = (timeframe: string) => {
     selectedTimeframe.value = timeframe;
     hasZoomedChart.value = false;
     zoomedDateRange.value = null;
-    refreshData();
-    startPolling();
+    const data = { timeframe } as any;
+    if (selectedSiteId.value !== props.sites[0].id) {
+        data.site_id = selectedSiteId.value?.toString();
+    }
+    router.visit(
+        dashboard(),
+        { data: data }
+    );
 };
 
 const onChartZoom = (newDateRange: { from: string; to: string }) => {
