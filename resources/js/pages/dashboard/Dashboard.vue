@@ -14,6 +14,7 @@ import { ucfirst } from '@/lib/utils';
 import { dashboard } from '@/routes';
 import type { BreadcrumbItem } from '@/types';
 import MetricCards from './partials/MetricCards.vue';
+import LiveVisitors from './partials/LiveVisitors.vue';
 
 interface Site {
     id: number;
@@ -313,6 +314,7 @@ pageTabs = [...pageTabs,
                                     </Button>
                                 </div>
                             </div>
+                            <LiveVisitors v-else :site_id="selectedSiteId" />
                         </div>
                     </div>
 

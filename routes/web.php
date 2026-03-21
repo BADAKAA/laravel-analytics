@@ -29,6 +29,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
         Route::get('/operating-systems', [DashboardController::class, 'getOperatingSystems']);
         Route::get('/devices', [DashboardController::class, 'getDevices']);
         Route::get('/details/{category}', [DashboardController::class, 'getDetails']);
+        Route::post('/live-visitors', [DashboardController::class, 'getLiveVisitors']);
     });
 });
 

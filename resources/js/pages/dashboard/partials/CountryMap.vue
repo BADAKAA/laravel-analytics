@@ -3,7 +3,7 @@ import type { GeoJSON, Map } from 'leaflet';
 import L from 'leaflet';
 import { LoaderCircle } from 'lucide-vue-next';
 import { ref, onMounted, computed, watch, nextTick } from 'vue';
-import { codeToName, compactNumber } from '@/lib/utils';
+import { codeToName, compactNumber, csrfToken } from '@/lib/utils';
 import 'leaflet/dist/leaflet.css';
 
 const SHOW_MAP_WHILE_LOADING = false;
@@ -169,28 +169,6 @@ function requestedCountryCodes(): string[] {
         .filter((code) => code && code !== '-99')));
 }
 
-function csrfToken(): string {
-    // Try meta tag first (most common)
-    const metaEl = document.querySelector('meta[name="csrf-token"]');
-
-    if (metaEl?.getAttribute('content')) {
-        return metaEl.getAttribute('content') || '';
-    }
-
-    // Fallback: try to get from cookie
-    const cookieValue = document.cookie
-        .split('; ')
-        .find((row) => row.startsWith('XSRF-TOKEN='))
-        ?.split('=')[1];
-
-    if (cookieValue) {
-        return decodeURIComponent(cookieValue);
-    }
-
-    console.warn('CSRF token not found in meta tag or cookies');
-
-    return '';
-}
 
 async function fetchMissingCountryFeatures(countries: string[]): Promise<any[]> {
     if (countries.length === 0) return [];

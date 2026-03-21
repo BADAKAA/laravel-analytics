@@ -16,7 +16,7 @@ class DashboardController extends Controller
 {
     private const DEFAULT_TIMEFRAME = '28_days';
     private const TOP_X_RESULTS = 9;
-    private const REALTIME_INTERVAL = 30; // minutes
+    private const REALTIME_INTERVAL_MINUTES = 30;
 
     public function index(Request $request)
     {
@@ -33,7 +33,7 @@ class DashboardController extends Controller
         $startDate = match ($timeframe) {
             'today' => Carbon::now()->startOfDay(),
             'yesterday' => Carbon::yesterday()->startOfDay(),
-            'realtime' => Carbon::now()->subMinutes(self::REALTIME_INTERVAL),
+            'realtime' => Carbon::now()->subMinutes(self::REALTIME_INTERVAL_MINUTES),
             'yesterday_24h' => Carbon::yesterday()->startOfDay(),
             '7_days' => Carbon::now()->subDays(7),
             '28_days' => Carbon::now()->subDays(28),
@@ -60,6 +60,22 @@ class DashboardController extends Controller
             ],
             'unfiltered_data' => $siteId ? $this->getUnfilteredData($siteId, $startDate, $endDate) : null,
         ]);
+    }
+
+    public function getLiveVisitors(Request $request)
+    {
+        $siteId = $request->query('site_id');
+        
+        if (!$siteId) {
+            return response()->json(['count' => 0]);
+        }
+
+        $count = Session::where('site_id', $siteId)
+            ->where('started_at', '>=', Carbon::now()->subMinutes(self::REALTIME_INTERVAL_MINUTES))
+            ->distinct('visitor_id')
+            ->count('visitor_id');
+
+        return response()->json(['count' => $count]);
     }
 
     /**
@@ -102,7 +118,6 @@ class DashboardController extends Controller
         $bounceRate = ($visits > 0) ? round(($dailyStats->sum(function ($stat) { return $stat->bounce_rate * $stat->visits; }) / $visits), 2) : 0;
         $viewsPerVisit = ($visits > 0) ? round($pageviews / $visits, 2) : 0;
 
-        // Merge aggregated data from all days
         $channels = $this->mergeAggregations($dailyStats->pluck('channels_agg'));
         $topPages = $this->mergeAggregations($dailyStats->pluck('top_pages_agg'));
         $entryPages = $this->mergeAggregations($dailyStats->pluck('entry_pages_agg'));
