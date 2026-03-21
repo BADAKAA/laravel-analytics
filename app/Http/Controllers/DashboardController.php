@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\Channel;
 use App\Enums\DeviceType;
 use App\Models\DailyStat;
+use App\Models\Pageview;
 use App\Models\Session;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
@@ -141,20 +142,26 @@ class DashboardController extends Controller
     /**
      * Merge aggregations from multiple days and sort by count
      */
-    private function mergeAggregations($aggregations)
+    private function mergeAggregations($aggregations, $aggregationType = 'default')
     {
         $merged = [];
         foreach ($aggregations as $agg) {
             if (is_array($agg)) {
-                foreach ($agg as $key => $count) {
-                    // Handle case where $count might be an array or invalid
-                    if (is_array($count)) {
-                        continue; // Skip nested arrays - they shouldn't be counted
+                foreach ($agg as $item) {
+                    // Handle structured aggregations (objects with 'key' and metric fields)
+                    if (is_array($item) && isset($item['key'])) {
+                        $key = (string) $item['key'];
+                        // Use 'pageviews' if available (for top_pages), otherwise 'visitors'
+                        $count = (int) ($item['pageviews'] ?? $item['visitors'] ?? 0);
+                        $merged[$key] = ($merged[$key] ?? 0) + $count;
+                    } else {
+                        // Handle flat key-value pairs (legacy format)
+                        if (is_array($item)) {
+                            continue;
+                        }
+                        $numericCount = is_numeric($item) ? (int) $item : 0;
+                        $merged[$item] = ($merged[$item] ?? 0) + $numericCount;
                     }
-                    
-                    // Ensure count is numeric
-                    $numericCount = is_numeric($count) ? (int) $count : 0;
-                    $merged[$key] = ($merged[$key] ?? 0) + $numericCount;
                 }
             }
         }
@@ -223,15 +230,7 @@ class DashboardController extends Controller
      */
     public function getMetrics(Request $request)
     {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
+        [$query, $startDate, $endDate, $filters] = $this->buildBaseQuery($request);
 
         $totalSessions = $query->count();
         $bouncedSessions = $query->where('is_bounce', true)->count();
@@ -252,15 +251,7 @@ class DashboardController extends Controller
      */
     public function getVisitorsChart(Request $request)
     {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
+        [$query, $startDate, $endDate, $filters] = $this->buildBaseQuery($request);
 
         // Group by date
         $data = $query
@@ -281,64 +272,41 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get channels data
+     * Get channel, source, or campaign data using generic category method
      */
     public function getChannels(Request $request)
     {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
-
-        $total = (clone $query)->count();
-
-        $data = $query
-            ->selectRaw('channel, COUNT(*) as visitors')
-            ->groupBy('channel')
-            ->orderByDesc('visitors')
-            ->limit(self::TOP_X_RESULTS)
-            ->get()
-            ->map(fn ($item) => [
-                'name' => $item->channel ? $this->getChannelLabel($item->channel) : 'Unknown',
-                'visitors' => $item->visitors,
-            ]);
-
-        return $this->categoryResponse($request, $data, $total);
+        return $this->getCategory($request, 'channel', 'channel', true);
     }
 
-    /**
-     * Get sources data (referrer domains)
-     */
     public function getSources(Request $request)
     {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
+        return $this->getCategory($request, 'referrer_domain', 'referrer_domain');
+    }
 
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
+    public function getUtmCampaigns(Request $request)
+    {
+        return $this->getCategory($request, 'utm_campaign', 'utm_campaign');
+    }
 
-        $query = $this->applyFiltersToQuery($query, $filters);
+    /**
+     * Generic method to get category data from sessions
+     */
+    private function getCategory(Request $request, string $column, string $displayColumn, bool $formatEnum = false): \Illuminate\Http\JsonResponse
+    {
+        [$query, $startDate, $endDate] = $this->buildBaseQuery($request);
 
-        $total = (clone $query)
-            ->whereNotNull('referrer_domain')
-            ->count();
+        $total = (clone $query)->whereNotNull($column)->count();
 
         $data = $query
-            ->selectRaw('referrer_domain, COUNT(*) as visitors')
-            ->whereNotNull('referrer_domain')
-            ->groupBy('referrer_domain')
+            ->selectRaw("{$column}, COUNT(*) as visitors")
+            ->whereNotNull($column)
+            ->groupBy($column)
             ->orderByDesc('visitors')
             ->limit(self::TOP_X_RESULTS)
             ->get()
             ->map(fn ($item) => [
-                'name' => $item->referrer_domain,
+                'name' => $this->formatCategoryValue($item->$column, $displayColumn, $formatEnum),
                 'visitors' => $item->visitors,
             ]);
 
@@ -346,37 +314,19 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get UTM campaigns data
+     * Format category values with optional enum conversion
      */
-    public function getUtmCampaigns(Request $request)
+    private function formatCategoryValue($value, string $column, bool $formatEnum = false): string
     {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
+        if ($value === null) {
+            return 'Unknown';
+        }
 
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
+        if ($formatEnum && $column === 'channel') {
+            return $this->getChannelLabel($value);
+        }
 
-        $query = $this->applyFiltersToQuery($query, $filters);
-
-        $total = (clone $query)
-            ->whereNotNull('utm_campaign')
-            ->count();
-
-        $data = $query
-            ->selectRaw('utm_campaign, COUNT(*) as visitors')
-            ->whereNotNull('utm_campaign')
-            ->groupBy('utm_campaign')
-            ->orderByDesc('visitors')
-            ->limit(self::TOP_X_RESULTS)
-            ->get()
-            ->map(fn ($item) => [
-                'name' => $item->utm_campaign,
-                'visitors' => $item->visitors,
-            ]);
-
-        return $this->categoryResponse($request, $data, $total);
+        return (string) $value;
     }
 
     /**
@@ -384,30 +334,7 @@ class DashboardController extends Controller
      */
     public function getTopPages(Request $request)
     {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
-
-        $total = (clone $query)
-            ->whereNotNull('entry_page')
-            ->count();
-
-        // Get pageviews from sessions' entry pages
-        $data = $query
-            ->selectRaw('entry_page as page, COUNT(*) as visitors')
-            ->whereNotNull('entry_page')
-            ->groupBy('entry_page')
-            ->orderByDesc('visitors')
-            ->limit(self::TOP_X_RESULTS)
-            ->get();
-
-        return $this->categoryResponse($request, $data, $total);
+        return $this->getPageCategory($request, 'top_pages');
     }
 
     /**
@@ -415,29 +342,7 @@ class DashboardController extends Controller
      */
     public function getEntryPages(Request $request)
     {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
-
-        $total = (clone $query)
-            ->whereNotNull('entry_page')
-            ->count();
-
-        $data = $query
-            ->selectRaw('entry_page as page, COUNT(*) as visitors')
-            ->whereNotNull('entry_page')
-            ->groupBy('entry_page')
-            ->orderByDesc('visitors')
-            ->limit(self::TOP_X_RESULTS)
-            ->get();
-
-        return $this->categoryResponse($request, $data, $total);
+        return $this->getPageCategory($request, 'entry_pages');
     }
 
     /**
@@ -445,59 +350,112 @@ class DashboardController extends Controller
      */
     public function getExitPages(Request $request)
     {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
-
-        $total = (clone $query)
-            ->whereNotNull('exit_page')
-            ->count();
-
-        $data = $query
-            ->selectRaw('exit_page as page, COUNT(*) as visitors')
-            ->whereNotNull('exit_page')
-            ->groupBy('exit_page')
-            ->orderByDesc('visitors')
-            ->limit(self::TOP_X_RESULTS)
-            ->get();
-
-        return $this->categoryResponse($request, $data, $total);
+        return $this->getPageCategory($request, 'exit_pages');
     }
 
     /**
-     * Get countries data
+     * Generic method to get page data (top, entry, or exit)
      */
-    public function getCountries(Request $request)
+    private function getPageCategory(Request $request, string $type): \Illuminate\Http\JsonResponse
     {
-        $siteId = $request->query('site_id');
+        [$query, $startDate, $endDate] = $this->buildBaseQuery($request);
         $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
+        $trackPageViews = config('analytics.track_page_views', true);
 
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
+        if ($trackPageViews) {
+            return $this->getPageCategoryFromPageviews($query, $startDate, $endDate, $filters, $type);
+        } else {
+            return $this->getPageCategoryFromSessions($query, $filters, $type);
+        }
+    }
 
-        $query = $this->applyFiltersToQuery($query, $filters);
+    /**
+     * Get page data from pageviews
+     */
+    private function getPageCategoryFromPageviews($query, Carbon $startDate, Carbon $endDate, array $filters, string $type): \Illuminate\Http\JsonResponse
+    {
+        $siteId = $query->where('site_id', null)->getBindings()[0] ?? null;
+        $query = Pageview::where('pageviews.site_id', $siteId)
+            ->whereBetween('viewed_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
 
-        $total = (clone $query)
-            ->whereNotNull('country_code')
-            ->count();
+        // Add page type filter
+        if ($type === 'entry_pages') {
+            $query->where('is_entry', true);
+        } elseif ($type === 'exit_pages') {
+            $query->where('is_exit', true);
+        }
 
+        $query->join('sessions', 'pageviews.session_id', '=', 'sessions.id');
+        $query = $this->applyFilters($query, $filters, 'pageview');
+
+        $total = (clone $query)->count();
         $data = $query
-            ->selectRaw('country_code, COUNT(*) as visitors')
-            ->whereNotNull('country_code')
-            ->groupBy('country_code')
+            ->selectRaw('pageviews.pathname as page, COUNT(*) as visitors')
+            ->groupBy('pageviews.pathname')
+            ->orderByDesc('visitors')
+            ->limit(self::TOP_X_RESULTS)
+            ->get()
+            ->map(fn ($item) => [
+                'name' => $item->page,
+                'visitors' => $item->visitors,
+            ]);
+
+        return $this->categoryResponse(request(), $data, $total);
+    }
+
+    /**
+     * Get page data from sessions
+     */
+    private function getPageCategoryFromSessions($query, array $filters, string $type): \Illuminate\Http\JsonResponse
+    {
+        $query = $this->applyFilters($query, $filters);
+
+        $column = match ($type) {
+            'entry_pages' => 'entry_page',
+            'exit_pages' => 'exit_page',
+            default => 'entry_page', // top_pages defaults to entry_page
+        };
+
+        $total = (clone $query)->whereNotNull($column)->count();
+        $data = $query
+            ->selectRaw("{$column} as page, COUNT(*) as visitors")
+            ->whereNotNull($column)
+            ->groupBy($column)
             ->orderByDesc('visitors')
             ->limit(self::TOP_X_RESULTS)
             ->get();
 
-        return $this->categoryResponse($request, $data, $total);
+        return $this->categoryResponse(request(), $data, $total);
+    }
+
+    public function getCountries(Request $request)
+    {
+        return $this->getCategory($request, 'country_code', 'country_code');
+    }
+
+    public function getRegions(Request $request)
+    {
+        return $this->getCategory($request, 'subdivision_code', 'subdivision_code');
+    }
+
+    public function getCities(Request $request)
+    {
+        return $this->getCategory($request, 'city', 'city');
+    }
+
+    public function getBrowsers(Request $request)
+    {
+        return $this->getCategory($request, 'browser', 'browser');
+    }
+
+    public function getOperatingSystems(Request $request)
+    {
+        return $this->getCategory($request, 'os', 'os');
+    }
+
+    public function getDevices(Request $request)
+    {
+        return $this->getCategory($request, 'device_type', 'device_type', true);
     }
 
     /**
@@ -558,163 +516,6 @@ class DashboardController extends Controller
     }
 
     /**
-     * Get regions data
-     */
-    public function getRegions(Request $request)
-    {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
-
-        $total = (clone $query)
-            ->whereNotNull('subdivision_code')
-            ->count();
-
-        $data = $query
-            ->selectRaw('subdivision_code, COUNT(*) as visitors')
-            ->whereNotNull('subdivision_code')
-            ->groupBy('subdivision_code')
-            ->orderByDesc('visitors')
-            ->limit(self::TOP_X_RESULTS)
-            ->get()
-            ->map(fn ($item) => [
-                'subdivision_code' => $item->subdivision_code,
-                'visitors' => $item->visitors,
-            ]);
-
-        return $this->categoryResponse($request, $data, $total);
-    }
-
-    /**
-     * Get cities data
-     */
-    public function getCities(Request $request)
-    {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
-
-        $total = (clone $query)
-            ->whereNotNull('city')
-            ->count();
-
-        $data = $query
-            ->selectRaw('city, COUNT(*) as visitors')
-            ->whereNotNull('city')
-            ->groupBy('city')
-            ->orderByDesc('visitors')
-            ->limit(self::TOP_X_RESULTS)
-            ->get();
-
-        return $this->categoryResponse($request, $data, $total);
-    }
-
-    /**
-     * Get browsers data
-     */
-    public function getBrowsers(Request $request)
-    {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
-
-        $total = (clone $query)
-            ->whereNotNull('browser')
-            ->count();
-
-        $data = $query
-            ->selectRaw('browser, COUNT(*) as visitors')
-            ->whereNotNull('browser')
-            ->groupBy('browser')
-            ->orderByDesc('visitors')
-            ->limit(self::TOP_X_RESULTS)
-            ->get();
-
-        return $this->categoryResponse($request, $data, $total);
-    }
-
-    /**
-     * Get operating systems data
-     */
-    public function getOperatingSystems(Request $request)
-    {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
-
-        $total = (clone $query)
-            ->whereNotNull('os')
-            ->count();
-
-        $data = $query
-            ->selectRaw('os, COUNT(*) as visitors')
-            ->whereNotNull('os')
-            ->groupBy('os')
-            ->orderByDesc('visitors')
-            ->limit(self::TOP_X_RESULTS)
-            ->get();
-
-        return $this->categoryResponse($request, $data, $total);
-    }
-
-    /**
-     * Get devices data
-     */
-    public function getDevices(Request $request)
-    {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
-
-        $total = (clone $query)
-            ->whereNotNull('device_type')
-            ->count();
-
-        $data = $query
-            ->selectRaw('device_type, COUNT(*) as visitors')
-            ->whereNotNull('device_type')
-            ->groupBy('device_type')
-            ->orderByDesc('visitors')
-            ->get()
-            ->map(fn ($item) => [
-                'name' => $item->device_type ? $this->getDeviceLabel($item->device_type) : 'Unknown',
-                'visitors' => $item->visitors,
-            ]);
-
-        return $this->categoryResponse($request, $data, $total);
-    }
-
-    /**
      * Return category data, optionally including total visitors across all values.
      */
     private function categoryResponse(Request $request, $data, int $total)
@@ -734,18 +535,10 @@ class DashboardController extends Controller
      */
     public function getDetails(Request $request, $category)
     {
-        $siteId = $request->query('site_id');
-        $filters = $this->parseFilters($request);
-        $startDate = Carbon::parse($request->query('date_from'));
-        $endDate = Carbon::parse($request->query('date_to'));
+        [$query, $startDate, $endDate, $filters] = $this->buildBaseQuery($request);
         $search = $request->query('search', '');
         $cursor = $request->query('cursor');
         $perPage = 20;
-
-        $query = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
-
-        $query = $this->applyFiltersToQuery($query, $filters);
 
         // Apply category-specific logic
         $column = match ($category) {
@@ -815,61 +608,78 @@ class DashboardController extends Controller
         ];
     }
 
-    private function countryCodeFromGeoJsonFeature(array $feature): string
+    /**
+     * Build base query with date range and filters
+     */
+    private function buildBaseQuery(Request $request): array
     {
-        $properties = $feature['properties'] ?? [];
+        $siteId = $request->query('site_id');
+        $filters = $this->parseFilters($request);
+        $startDate = Carbon::parse($request->query('date_from'));
+        $endDate = Carbon::parse($request->query('date_to'));
 
-        if (!is_array($properties)) {
-            return '';
-        }
+        $query = Session::where('site_id', $siteId)
+            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
 
-        $code = strtoupper(trim((string) ($properties['ISO3166-1-Alpha-2'] ?? $properties['ISO_A2'] ?? '')));
+        $query = $this->applyFilters($query, $filters);
 
-        return $code !== '-99' ? $code : '';
+        return [$query, $startDate, $endDate, $filters];
     }
 
     /**
-     * Apply filters to query
+     * Apply filters to query - unified method handling both sessions and pageviews
      */
-    private function applyFiltersToQuery($query, array $filters)
+    private function applyFilters($query, array $filters, ?string $tablePrefix = null): mixed
     {
+        $prefix = $tablePrefix === 'pageview' ? 'sessions.' : '';
+
         if ($filters['channel']) {
             $channelValue = $this->getChannelValue($filters['channel']);
             if ($channelValue !== null) {
-                $query->where('channel', $channelValue);
+                $query->where("{$prefix}channel", $channelValue);
             }
         }
         if ($filters['country']) {
-            $query->where('country_code', $filters['country']);
+            $query->where("{$prefix}country_code", $filters['country']);
         }
         if ($filters['region']) {
-            $query->where('subdivision_code', $filters['region']);
+            $query->where("{$prefix}subdivision_code", $filters['region']);
         }
         if ($filters['city']) {
-            $query->where('city', $filters['city']);
+            $query->where("{$prefix}city", $filters['city']);
         }
         if ($filters['device_type']) {
             $deviceValue = $this->getDeviceValue($filters['device_type']);
             if ($deviceValue !== null) {
-                $query->where('device_type', $deviceValue);
+                $query->where("{$prefix}device_type", $deviceValue);
             }
         }
         if ($filters['browser']) {
-            $query->where('browser', $filters['browser']);
+            $query->where("{$prefix}browser", $filters['browser']);
         }
         if ($filters['os']) {
-            $query->where('os', $filters['os']);
+            $query->where("{$prefix}os", $filters['os']);
         }
         if ($filters['page']) {
-            $query->where('entry_page', $filters['page']);
+            $column = $tablePrefix === 'pageview' ? 'pathname' : 'entry_page';
+            $tablePrefix = $tablePrefix === 'pageview' ? 'pageviews.' : '';
+            $query->where("{$tablePrefix}{$column}", $filters['page']);
         }
         if ($filters['referrer_domain']) {
-            $query->where('referrer_domain', $filters['referrer_domain']);
+            $query->where("{$prefix}referrer_domain", $filters['referrer_domain']);
         }
         if ($filters['utm_campaign']) {
-            $query->where('utm_campaign', $filters['utm_campaign']);
+            $query->where("{$prefix}utm_campaign", $filters['utm_campaign']);
         }
 
         return $query;
+    }
+
+    private function countryCodeFromGeoJsonFeature(array $feature): string
+    {
+        $properties = $feature['properties'] ?? [];
+        if (!is_array($properties)) return '';
+        $code = strtoupper(trim((string) ($properties['ISO3166-1-Alpha-2'] ?? $properties['ISO_A2'] ?? '')));
+        return $code !== '-99' ? $code : '';
     }
 }

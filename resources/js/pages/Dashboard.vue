@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { Head, router } from '@inertiajs/vue3';
+import { Head, router, usePage } from '@inertiajs/vue3';
 import { useUrlSearchParams } from '@vueuse/core';
 import { XIcon } from 'lucide-vue-next';
 import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue';
@@ -254,6 +254,26 @@ onMounted(() => {
 onBeforeUnmount(() => {
     stopPolling();
 });
+
+let pageTabs = usePage().props.pageviewsEnabled
+    ? [{
+        id: 'top_pages',
+        label: 'Top Pages',
+        category: 'top_pages',
+    }]
+    : [];
+pageTabs = [ ...pageTabs,
+    {
+        id: 'entry_pages',
+        label: 'Entry Pages',
+        category: 'entry_pages',
+    },
+    {
+        id: 'exit_pages',
+        label: 'Exit Pages',
+        category: 'exit_pages',
+    },
+];
 </script>
 
 <template>
@@ -408,23 +428,7 @@ onBeforeUnmount(() => {
                         :isLoading="isLoading" @filter="onFilterApply" @open-details="onOpenDetailModal" />
 
                     <!-- Panel 2: Top Pages/Entry/Exit Pages -->
-                    <TabbedDataPanel title="Pages" bg-class="bg-rose-100 dark:bg-rose-900" :tabs="[
-                        // {
-                        //     id: 'top_pages',
-                        //     label: 'Top Pages',
-                        //     category: 'top_pages',
-                        // },
-                        {
-                            id: 'entry_pages',
-                            label: 'Entry Pages',
-                            category: 'entry_pages',
-                        },
-                        {
-                            id: 'exit_pages',
-                            label: 'Exit Pages',
-                            category: 'exit_pages',
-                        },
-                    ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters"
+                    <TabbedDataPanel title="Pages" bg-class="bg-rose-100 dark:bg-rose-900" :tabs="pageTabs" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters"
                         :isLoading="isLoading" @filter="onFilterApply" @open-details="onOpenDetailModal" />
 
                     <!-- Panel 3: Countries/Map -->

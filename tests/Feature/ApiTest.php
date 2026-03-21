@@ -31,6 +31,15 @@ describe('Analytics API Endpoint', function () {
             'exit_page' => '/home',
         ]);
 
+        // Verify pageview was created if tracking is enabled
+        if (config('analytics.track_page_views')) {
+            $this->assertDatabaseHas('pageviews', [
+                'site_id' => $this->site->id,
+                'pathname' => '/home',
+                'is_entry' => true,
+                'is_exit' => true,
+            ]);
+        }
     });
 
     test('can update session on subsequent pageview', function () {
@@ -59,6 +68,17 @@ describe('Analytics API Endpoint', function () {
         $this->assertEquals('/home', $session1->exit_page);
         $this->assertTrue($session1->is_bounce);
 
+        // Verify first pageview
+        if (config('analytics.track_page_views')) {
+            $this->assertDatabaseHas('pageviews', [
+                'site_id' => $this->site->id,
+                'session_id' => $session1->id,
+                'pathname' => '/home',
+                'is_entry' => true,
+                'is_exit' => true,
+            ]);
+        }
+
         // Second pageview  
         $response2 = $this->postJson(
             '/api/pageview',
@@ -74,6 +94,25 @@ describe('Analytics API Endpoint', function () {
         
         // Verify at least one session exists (no session_id returned, just check it processes)
         $this->assertTrue(Session::where('site_id', $this->site->id)->exists());
+
+        // Verify pageview tracking
+        if (config('analytics.track_page_views')) {
+            // First pageview should have is_exit = false now
+            $this->assertDatabaseHas('pageviews', [
+                'site_id' => $this->site->id,
+                'pathname' => '/home',
+                'is_entry' => true,
+                'is_exit' => false,
+            ]);
+
+            // Second pageview should be created
+            $this->assertDatabaseHas('pageviews', [
+                'site_id' => $this->site->id,
+                'pathname' => '/about',
+                'is_entry' => false,
+                'is_exit' => true,
+            ]);
+        }
     });
 
     test('fails if site domain not found', function () {

@@ -22,7 +22,7 @@ export function compactNumber(value: number): string {
 }
 
 export function ucfirst(str: string): string {
-    const parts = str.split(' ');
+    const parts = str.split('_');
 
     return parts.map(part => part.charAt(0).toUpperCase() + part.slice(1)).join(' ');
 }

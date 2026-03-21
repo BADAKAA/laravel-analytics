@@ -3,6 +3,7 @@
 namespace App\Console\Commands;
 
 use App\Models\DailyStat;
+use App\Models\Pageview;
 use App\Models\Session;
 use App\Models\Site;
 use Illuminate\Console\Command;
@@ -132,13 +133,23 @@ class AggregateAnalytics extends Command
             ])
             ->toArray();
 
-        $topPagesAgg = $sessQ()
-            ->selectRaw('entry_page as pathname, SUM(pageviews) as pageviews, COUNT(DISTINCT visitor_id) as visitors')
-            ->groupBy('entry_page')
-            ->orderByDesc('pageviews')
-            ->get()
-            ->map(fn ($r) => ['key' => $r->pathname, 'pageviews' => (int) $r->pageviews, 'visitors' => (int) $r->visitors])
-            ->toArray();
+        $topPagesAgg = null;
+        if (config('analytics.track_page_views', true)) {
+            $topPagesAgg = [];
+            // Aggregate from actual pageviews when tracking is enabled
+            $topPagesAgg = Pageview::where('site_id', $site->id)
+                ->whereDate('viewed_at', $date)
+                ->groupBy('pathname')
+                ->select(
+                    'pathname',
+                    DB::raw('COUNT(*) as pageviews'),
+                    DB::raw('COUNT(DISTINCT session_id) as visitors')
+                )
+                ->orderByDesc('pageviews')
+                ->get()
+                ->map(fn ($r) => ['key' => $r->pathname, 'pageviews' => (int) $r->pageviews, 'visitors' => (int) $r->visitors])
+                ->toArray();
+        }
 
         $entryPagesAgg = $sessQ()
             ->groupBy('entry_page')

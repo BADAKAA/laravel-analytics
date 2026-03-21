@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Enums\DeviceType;
+use App\Models\Pageview;
 use App\Models\Session;
 use App\Models\Site;
 use App\Services\ChannelClassifier;
@@ -73,8 +74,18 @@ class ApiController extends Controller {
 
         $t9 = microtime(true);
         $now = now();
+        $trackPageViews = config('analytics.track_page_views', true);
+
+        // Check if this is a new session
+        $existingSession = Session::where('site_id', $validated['site_id'])
+            ->where('visitor_id', $visitorId)
+            ->orderBy('started_at', 'desc')
+            ->first();
+        
+        $isNewSession = !$existingSession;
 
         try {
+            $t_session_upsert = microtime(true);
             Session::upsertFromPageview(
                 siteId: $validated['site_id'],
                 visitorId: $visitorId,
@@ -111,6 +122,35 @@ class ApiController extends Controller {
                     'is_bounce' => false,
                 ]
             );
+            $this->recordTiming('session_upsert', $t_session_upsert);
+
+            // Track individual pageviews if enabled
+            if ($trackPageViews) {
+                $t_pageview = microtime(true);
+                $session = Session::where('site_id', $validated['site_id'])
+                    ->where('visitor_id', $visitorId)
+                    ->orderBy('started_at', 'desc')
+                    ->first();
+
+                // Mark previous pageview as not exit
+                if (!$isNewSession) {
+                    Pageview::where('session_id', $session->id)
+                        ->where('is_exit', true)
+                        ->update(['is_exit' => false]);
+                }
+
+                // Create new pageview
+                Pageview::create([
+                    'site_id' => $validated['site_id'],
+                    'session_id' => $session->id,
+                    'hostname' => $validated['hostname'] ?? '',
+                    'pathname' => $validated['pathname'],
+                    'viewed_at' => $now,
+                    'is_entry' => $isNewSession,
+                    'is_exit' => true,
+                ]);
+                $this->recordTiming('pageview_operations', $t_pageview);
+            }
         } catch (\Illuminate\Database\QueryException $e) {
             if (str_contains($e->getMessage(), 'FOREIGN KEY') || str_contains($e->getMessage(), 'foreign key')) {
                 return response()->json(['error' => 'Site not found'], 404);
@@ -118,7 +158,7 @@ class ApiController extends Controller {
             throw $e;
         }
 
-        $this->recordTiming('session_upsert', $t9);
+        $this->recordTiming('total', $t9);
 
         $this->recordTiming('total', $requestTime);
 

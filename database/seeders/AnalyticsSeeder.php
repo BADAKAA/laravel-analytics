@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use App\Enums\DeviceType;
 use App\Enums\SiteRole;
+use App\Models\Pageview;
 use App\Models\Session;
 use App\Models\Site;
 use App\Models\SiteUser;
@@ -165,7 +166,7 @@ class AnalyticsSeeder extends Seeder
                     $exitPage = $page;
                 }
 
-                Session::create([
+                $session = Session::create([
                     'site_id' => $site->id,
                     'visitor_id' => $visitorId,
                     'started_at' => $sessionTime,
@@ -192,6 +193,24 @@ class AnalyticsSeeder extends Seeder
                     'device_type' => $device['type'],
                     'screen_width' => $screenWidth,
                 ]);
+
+                // Create pageview records if tracking is enabled
+                if (config('analytics.track_page_views', true)) {
+                    $pageviewTime = $sessionTime->copy();
+                    foreach ($pages as $pageIndex => $page) {
+                        Pageview::create([
+                            'site_id' => $site->id,
+                            'session_id' => $session->id,
+                            'hostname' => $site->domain,
+                            'pathname' => $page,
+                            'viewed_at' => $pageviewTime,
+                            'is_entry' => $pageIndex === 0,
+                            'is_exit' => $pageIndex === count($pages) - 1,
+                        ]);
+                        // Increment time for next pageview
+                        $pageviewTime->addSeconds(rand(5, 30));
+                    }
+                }
             }
 
             $this->command->info("Generated sessions for {$date->format('Y-m-d')}");
