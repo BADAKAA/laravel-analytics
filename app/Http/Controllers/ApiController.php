@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Enums\DeviceType;
 use App\Models\Session;
 use App\Models\Site;
 use App\Services\ChannelClassifier;
@@ -10,17 +11,15 @@ use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 
-class ApiController extends Controller
-{
+class ApiController extends Controller {
+
     private array $timings = [];
     private bool $trackTiming = false;
 
-    public function __invoke(Request $request): JsonResponse
-    {
+    public function __invoke(Request $request): JsonResponse {
         $requestTime = microtime(true);
         $this->trackTiming = $request->header('X-Benchmark') === 'true';
 
-        // Validate incoming pageview data
         $t1 = microtime(true);
         $validated = $request->validate([
             'site_id' => 'required|integer',
@@ -36,7 +35,6 @@ class ApiController extends Controller
         ]);
         $this->recordTiming('validation', $t1);
 
-        // Extract visitor hash, browser, OS, device type, and location
         $ip = $request->ip() ?? '';
         $userAgent = $request->header('User-Agent') ?? '';
 
@@ -44,7 +42,6 @@ class ApiController extends Controller
         $visitorId = VisitorHash::make($ip, $userAgent, (string)$validated['site_id']);
         $this->recordTiming('visitor_hash', $t3);
 
-        // Parse user agent for browser/OS/device info
         $t4 = microtime(true);
         $browserInfo = $this->parseBrowserInfo($userAgent);
         $this->recordTiming('parse_browser', $t4);
@@ -53,7 +50,6 @@ class ApiController extends Controller
         $deviceInfo = $this->parseDeviceInfo($validated['screen_width'] ?? null);
         $this->recordTiming('parse_device', $t5);
 
-        // Extract referrer domain
         $t6 = microtime(true);
         $referrerDomain = null;
         if ($validated['referrer'] ?? null) {
@@ -61,7 +57,6 @@ class ApiController extends Controller
         }
         $this->recordTiming('parse_referrer', $t6);
 
-        // Classify traffic channel
         $t7 = microtime(true);
         $channelClassifier = app(ChannelClassifier::class);
         $channel = $channelClassifier->classify(
@@ -72,15 +67,13 @@ class ApiController extends Controller
         );
         $this->recordTiming('classify_channel', $t7);
 
-        // Get geolocation data (if available)
         $t8 = microtime(true);
         $geoData = $this->getGeoData($ip);
         $this->recordTiming('geoip_lookup', $t8);
 
-        // Upsert session using single atomic query (Eloquent upsert)
         $t9 = microtime(true);
         $now = now();
-        
+
         try {
             Session::upsertFromPageview(
                 siteId: $validated['site_id'],
@@ -119,14 +112,12 @@ class ApiController extends Controller
                 ]
             );
         } catch (\Illuminate\Database\QueryException $e) {
-            // Return 404 if site ID doesn't exist (foreign key constraint failure)
             if (str_contains($e->getMessage(), 'FOREIGN KEY') || str_contains($e->getMessage(), 'foreign key')) {
                 return response()->json(['error' => 'Site not found'], 404);
             }
-            // Re-throw other database errors
             throw $e;
         }
-        
+
         $this->recordTiming('session_upsert', $t9);
 
         $this->recordTiming('total', $requestTime);
@@ -140,8 +131,7 @@ class ApiController extends Controller
         return $response;
     }
 
-    private function recordTiming(string $operation, float $startTime): void
-    {
+    private function recordTiming(string $operation, float $startTime): void {
         if ($this->trackTiming) {
             $duration = (microtime(true) - $startTime) * 1000; // ms
             $this->timings[$operation] = $duration;
@@ -151,48 +141,31 @@ class ApiController extends Controller
     /**
      * Parse browser and OS info from user agent string.
      */
-    private function parseBrowserInfo(string $userAgent): array
-    {
+    private function parseBrowserInfo(string $userAgent): array {
         $browser = 'Unknown';
         $browserVersion = 'Unknown';
         $os = 'Unknown';
         $osVersion = 'Unknown';
 
-        // Chrome
-        if (preg_match('/Chrome\/(\d+)/', $userAgent, $m)) {
-            $browser = 'Chrome';
-            $browserVersion = $m[1];
-        } // Safari (before Chrome check since Chrome also mentions Safari)
-        elseif (preg_match('/Version\/(\d+).*Safari/', $userAgent, $m)) {
-            $browser = 'Safari';
-            $browserVersion = $m[1];
-        } // Firefox
-        elseif (preg_match('/Firefox\/(\d+)/', $userAgent, $m)) {
-            $browser = 'Firefox';
-            $browserVersion = $m[1];
-        } // Edge
-        elseif (preg_match('/Edg\/(\d+)/', $userAgent, $m)) {
-            $browser = 'Edge';
-            $browserVersion = $m[1];
-        }
+        [$browser, $browserVersion] = match (true) {
+            preg_match('/Chrome\/(\d+)/', $userAgent, $m) === 1 => ['Chrome', $m[1]],
+            // Safari before Chrome because Chrome UAs also include Safari token.
+            preg_match('/Version\/(\d+).*Safari/', $userAgent, $m) === 1 => ['Safari', $m[1]],
+            preg_match('/Firefox\/(\d+)/', $userAgent, $m) === 1 => ['Firefox', $m[1]],
+            preg_match('/Edg\/(\d+)/', $userAgent, $m) === 1 => ['Edge', $m[1]],
+            default => ['Unknown', 'Unknown'],
+        };
 
-        // Operating Systems
-        if (preg_match('/Windows NT 10\.0/', $userAgent)) {
-            $os = 'Windows';
-            $osVersion = '10';
-        } elseif (preg_match('/Windows NT 11\.0/', $userAgent)) {
-            $os = 'Windows';
-            $osVersion = '11';
-        } elseif (preg_match('/Macintosh.*Mac OS X (\d+_\d+)/', $userAgent, $m)) {
-            $os = 'macOS';
-            $osVersion = str_replace('_', '.', $m[1]);
-        } elseif (preg_match('/iPhone.*OS (\d+)/', $userAgent, $m)) {
-            $os = 'iOS';
-            $osVersion = $m[1];
-        } elseif (preg_match('/Android (\d+)/', $userAgent, $m)) {
-            $os = 'Android';
-            $osVersion = $m[1];
-        }
+        [$os, $osVersion] = match (true) {
+            preg_match('/Windows NT 10\.0/', $userAgent) === 1 => ['Windows', '10'],
+            preg_match('/Windows NT 11\.0/', $userAgent) === 1 => ['Windows', '11'],
+            preg_match('/Macintosh.*Mac OS X (\d+_\d+)/', $userAgent, $m) === 1 => ['macOS', str_replace('_', '.', $m[1])],
+            preg_match('/iPhone.*OS (\d+)/', $userAgent, $m) === 1 => ['iOS', $m[1]],
+            preg_match('/Android (\d+)/', $userAgent, $m) === 1 => ['Android', $m[1]],
+            preg_match('/Ubuntu(?:[\/\s]+([0-9]+(?:\.[0-9]+)?))?/i', $userAgent, $m) === 1 => ['Ubuntu', $m[1] ?? 'Unknown'],
+            preg_match('/(?:GNU\/Linux|Linux)/i', $userAgent) === 1 => ['GNU/Linux', 'Unknown'],
+            default => ['Unknown', 'Unknown'],
+        };
 
         return [
             'name' => $browser,
@@ -205,28 +178,20 @@ class ApiController extends Controller
     /**
      * Detect device type from user agent and screen width.
      */
-    private function parseDeviceInfo(?int $screenWidth): array
-    {
-        // Use screen width as primary signal
-        if ($screenWidth) {
-            if ($screenWidth < 768) {
-                return ['type' => 2]; // Mobile (DeviceType::Mobile->value)
-            } elseif ($screenWidth < 1024) {
-                return ['type' => 3]; // Tablet (DeviceType::Tablet->value)
-            } else {
-                return ['type' => 1]; // Desktop (DeviceType::Desktop->value)
-            }
-        }
-
-        return ['type' => 0]; // Unknown (DeviceType::Unknown->value)
+    private function parseDeviceInfo(?int $screenWidth): array {
+        return ['type' => match (true) {
+            !$screenWidth => DeviceType::Unknown->value,
+            $screenWidth < 768 => DeviceType::Mobile->value,
+            $screenWidth < 1024 => DeviceType::Tablet->value,
+            default => DeviceType::Desktop->value,
+        }];
     }
 
     /**
      * Resolve geolocation from IP address.
      * Uses GeoIP2 if available, otherwise returns empty array.
      */
-    private function getGeoData(string $ip): array
-    {
+    private function getGeoData(string $ip): array {
         try {
             // Try to use GeoIP2 if configured
             $geoipPath = storage_path('app/GeoLite2-City.mmdb');
