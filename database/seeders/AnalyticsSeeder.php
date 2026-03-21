@@ -26,7 +26,7 @@ class AnalyticsSeeder extends Seeder
         $site = Site::updateOrCreate(
             ['domain' => 'example.com'],
             [
-                'name' => 'Example Analytics Site',
+                'name' => 'Your Website',
                 'timezone' => 'UTC',
                 'is_public' => false,
             ]
@@ -67,7 +67,7 @@ class AnalyticsSeeder extends Seeder
             ['country_code' => 'US', 'subdivision' => 'NY', 'city' => 'New York', 'weight' => 0.2],
             ['country_code' => 'GB', 'subdivision' => 'ENG', 'city' => 'London', 'weight' => 0.15],
             ['country_code' => 'DE', 'subdivision' => 'BE', 'city' => 'Berlin', 'weight' => 0.1],
-            ['country_code' => 'FR', 'subdivision' => 'IDF', 'city' => 'Paris', 'weight' => 0.1],
+            ['country_code' => 'FR', 'subdivision' => '92', 'city' => 'Paris', 'weight' => 0.1],
             ['country_code' => 'CA', 'subdivision' => 'ON', 'city' => 'Toronto', 'weight' => 0.08],
             ['country_code' => 'AU', 'subdivision' => 'NSW', 'city' => 'Sydney', 'weight' => 0.07],
         ];
@@ -183,7 +183,7 @@ class AnalyticsSeeder extends Seeder
                     'referrer_domain' => $traffic['source'],
                     'channel' => $channel,
                     'country_code' => $location['country_code'],
-                    'subdivision_code' => $location['subdivision'],
+                    'subdivision_code' => $location['country_code'] . '-' . $location['subdivision'],
                     'city' => $location['city'],
                     'browser' => $browser['name'],
                     'browser_version' => $browserVersion,
