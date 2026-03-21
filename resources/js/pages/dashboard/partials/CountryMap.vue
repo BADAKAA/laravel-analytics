@@ -6,7 +6,7 @@ import { ref, onMounted, computed, watch, nextTick } from 'vue';
 import { codeToName, compactNumber, csrfToken } from '@/lib/utils';
 import 'leaflet/dist/leaflet.css';
 
-const SHOW_MAP_WHILE_LOADING = false;
+const SHOW_MAP_WHILE_LOADING = true;
 
 interface CountryData {
     name?: string;
@@ -19,6 +19,7 @@ const props = defineProps<{
     dateRange: { from: string; to: string };
     filters: Record<string, string>;
     isLoading?: boolean;
+    countriesData?: CountryData[];
 }>();
 
 const emit = defineEmits<{
@@ -132,13 +133,30 @@ const fetchCountryData = async () => {
     dataLoading.value = true;
 
     try {
-        const response = await fetch(`/api/dashboard/countries?${buildQueryParams()}`);
+        const payload = {
+            site_id: props.siteId,
+            date_from: props.dateRange.from,
+            date_to: props.dateRange.to,
+            categories: ['countries'],
+            include_metrics: false,
+            filters: props.filters,
+        };
+
+        const response = await fetch('/api/dashboard/aggregate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '',
+            },
+            body: JSON.stringify(payload),
+        });
+
         const data = await response.json();
-        items.value = data;
+        items.value = data.countries || [];
     } catch (error) {
         console.error('Error fetching country data:', error);
         items.value = [];
-    } 
+    }
     dataLoading.value = false;
 };
 
@@ -208,7 +226,7 @@ async function syncCountryGeoJson() {
     const missing = requested.filter((code) => !cache[code]);
 
     if (missing.length > 0) {
-    try {
+        try {
             const fetchedFeatures = await fetchMissingCountryFeatures(missing);
             fetchedFeatures.forEach((feature) => {
                 const code = countryCodeFromFeature(feature);
@@ -225,7 +243,7 @@ async function syncCountryGeoJson() {
         .filter(Boolean);
 
     if (countriesLayer.value) countriesLayer.value.clearLayers();
-    
+
     countriesLayer.value = L.geoJSON({ type: 'FeatureCollection', features: [] } as any, {
         style: createStyle,
         onEachFeature: onEachCountry,
@@ -308,6 +326,8 @@ function onEachCountry(feature: any, layer: L.Layer) {
     });
 }
 
+const hasReceivedData = ref(false);
+
 const initializeMap = async () => {
     if (!mapContainer.value?.offsetHeight || initialisingMap.value) {
         return setTimeout(() => initializeMap(), 300);
@@ -320,7 +340,7 @@ const initializeMap = async () => {
             zoomControl: true,
             attributionControl: true,
         }).setView([20, 8], 2);
-        
+
         L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 6,
             minZoom: 2,
@@ -328,25 +348,40 @@ const initializeMap = async () => {
         }).addTo(mapL.value as any);
     }
 
-    await fetchCountryData();
     await syncCountryGeoJson();
-
     initialisingMap.value = false;
+    hasReceivedData.value = true;
 };
 
-onMounted(() => initializeMap());
+watch(() => props.countriesData, (newData) => {
+    if (newData && newData.length > 0) {
+        items.value = newData;
+        initializeMap();
+    }
+}, { immediate: true });
 
 watch(() => [props.siteId, props.dateRange, props.filters],
-    () => initializeMap(),
+    () => {
+        // Only reinitialize map if we already have it and need to refetch data
+        if (mapL.value && !props.countriesData) {
+            fetchCountryData().then(() => syncCountryGeoJson());
+        }
+    },
     { deep: true }
 );
 
 </script>
 <template>
-    <div v-if="isLoading || dataLoading || (!SHOW_MAP_WHILE_LOADING && initialisingMap)" class="flex h-96 items-center justify-center">
+    <div class="h-96 relative -m-4 rounded-2xl">
+
+    <div v-if="!hasReceivedData || isLoading || (!SHOW_MAP_WHILE_LOADING && (initialisingMap || dataLoading))"
+        class="flex absolute inset-0 rounded-[inherit] bg-background z-10  items-center justify-center">
         <LoaderCircle class="h-8 w-8 animate-spin opacity-30" />
     </div>
-    <div ref="mapContainer" v-show="SHOW_MAP_WHILE_LOADING || !initialisingMap"  class="h-96 rounded-2xl -m-4 bg-gray-100 dark:bg-slate-800" />
+    <div ref="mapContainer" v-show="(SHOW_MAP_WHILE_LOADING || !initialisingMap)"
+        class="h-full rounded-[inherit] bg-gray-100 dark:bg-slate-800" />
+    </div>
+
 </template>
 
 <style scoped>

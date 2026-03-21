@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { VisXYContainer, VisLine, VisAxis, VisArea, VisTooltip, VisCrosshair } from '@unovis/vue';
-import { computed } from 'vue';
+import { computed, ref, watch } from 'vue';
 import { compactNumber } from '@/lib/utils';
+import { LoaderCircle } from 'lucide-vue-next';
 
 const CURVE_TYPE:'linear'|'basis'|'step' = 'linear';
 
@@ -28,6 +29,15 @@ const emit = defineEmits<{
     zoom: [range: { from: string; to: string }];
     filter: [type: string, value: string];
 }>();
+
+const hasReceivedData = ref(false);
+
+// Track when data is received for the first time
+watch(() => props.data, (newData) => {
+    if (newData && newData.length > 0) {
+        hasReceivedData.value = true;
+    }
+});
 
 const chartData = computed(() => props.data || []);
 const activeMetric = computed(() => props.metric || 'visitors');
@@ -112,8 +122,8 @@ const crosshairTemplate = (datum: ChartDataPoint | undefined, x: number | Date) 
 </script>
 
 <template>
-    <div v-if="isLoading" class="flex h-80 items-center justify-center">
-        <div class="text-gray-500 dark:text-gray-400">Loading chart...</div>
+    <div v-if="isLoading && !hasReceivedData" class="flex h-80 items-center justify-center">
+        <LoaderCircle class="h-8 w-8 animate-spin opacity-30" />
     </div>
     <div v-else-if="chartData.length === 0" class="flex h-80 items-center justify-center text-gray-500 dark:text-gray-400">
         No data available

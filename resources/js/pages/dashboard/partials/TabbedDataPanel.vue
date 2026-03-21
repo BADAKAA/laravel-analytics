@@ -32,10 +32,11 @@ interface Tab {
 const props = defineProps<{
     title: string;
     tabs: Tab[];
+    data: Record<string, any>;
     siteId: number | null;
     dateRange: { from: string; to: string };
     filters: Record<string, string>;
-    isLoading?: boolean;
+    loadingCategories?: Set<string>;
     bgClass?: string;
 }>();
 
@@ -44,101 +45,33 @@ const bg = computed(() => props.bgClass || 'bg-foreground/5');
 const emit = defineEmits<{
     filter: [type: string, value: string];
     openDetails: [category: string];
+    tabChange: [category: string];
 }>();
 
 const activeTabId = ref<string>('');
-const tabData = ref<Record<string, DataItem[]>>({});
-const tabTotals = ref<Record<string, number>>({});
-const loadedTabs = ref<Set<string>>(new Set());
 const dataLoading = ref(false);
-
-const buildQueryParams = () => {
-    const params = new URLSearchParams({
-        site_id: props.siteId!.toString(),
-        date_from: props.dateRange.from,
-        date_to: props.dateRange.to,
-    });
-
-    Object.entries(props.filters).forEach(([key, value]) => {
-        params.append(`filter_${key}`, value);
-    });
-
-    params.append('include_total', '1');
-
-    return params;
-};
+const preservedHeight = ref<number | null>(null);
 
 const tabBody = ref<HTMLElement | null>(null);
-const fetchTabData = async (category: string) => {
-    if (!props.siteId || category === 'map') return;
-    if (loadedTabs.value.has(category)) return;
-
-    dataLoading.value = true;
-    const currentHeight = tabBody.value?.clientHeight || 0;
-    tabBody.value?.style.setProperty('height', `${Math.max(currentHeight, 200)}px`);
-    try {
-        let endpoint = category;
-
-        if (category === 'top_pages') {
-            endpoint = 'pages';
-        } else {
-            // Convert underscores to hyphens for API endpoints
-            endpoint = endpoint.replace(/_/g, '-');
-        }
-
-        const response = await fetch(`/api/dashboard/${endpoint}?${buildQueryParams()}`);
-        const payload = await response.json() as DataItem[] | CategoryResponse;
-
-        if (Array.isArray(payload)) {
-            tabData.value[category] = payload;
-            tabTotals.value[category] = payload.reduce((sum, item) => sum + getItemValue(item), 0);
-        } else {
-            const items = Array.isArray(payload.data) ? payload.data : [];
-            tabData.value[category] = items;
-            tabTotals.value[category] = typeof payload.total === 'number'
-                ? payload.total
-                : items.reduce((sum, item) => sum + getItemValue(item), 0);
-        }
-
-        loadedTabs.value.add(category);
-    } catch (error) {
-        console.error(`Error fetching ${category} data:`, error);
-        tabData.value[category] = [];
-        tabTotals.value[category] = 0;
-    } finally {
-        dataLoading.value = false;
-        if (!tabBody.value) return;
-        tabBody.value?.style.removeProperty('height');
-    }
-};
 
 onMounted(() => {
     if (props.tabs.length > 0 && !activeTabId.value) {
         activeTabId.value = props.tabs[0].id;
-        const activeTab = props.tabs[0];
-        if (activeTab) fetchTabData(activeTab.category);
     }
 });
 
-watch([() => activeTabId.value, () => props.siteId, () => props.dateRange, () => props.filters],
-    ([newTabId]) => {
-        // Clear loaded tabs on filter/date/site change
-        if (props.siteId && (props.dateRange || props.filters)) {
-            loadedTabs.value.clear();
-            tabData.value = {};
-            tabTotals.value = {};
-        }
+watch([() => activeTabId.value], ([newTabId]) => {
+    if (!newTabId) return;
+    const currentTab = props.tabs.find((t) => t.id === newTabId);
+    if (currentTab) {
+        emit('tabChange', currentTab.category);
+    }
+});
 
-        // Fetch data for the current tab if not already loaded
-        if (!newTabId) return
-        const currentTab = props.tabs.find((t) => t.id === newTabId);
-
-        if (currentTab && !loadedTabs.value.has(currentTab.category)) {
-            fetchTabData(currentTab.category);
-        }
-    },
-    { deep: true }
-);
+// Reset data loading on filter/date/site change
+watch(() => [props.filters, props.dateRange, props.siteId], () => {
+    dataLoading.value = false;
+}, { deep: true });
 
 const currentTab = computed(() => {
     return props.tabs.find((t) => t.id === activeTabId.value) || props.tabs[0];
@@ -147,13 +80,34 @@ const currentTab = computed(() => {
 const displayItems = computed(() => {
     if (!currentTab.value) return [];
 
-    const items = tabData.value[currentTab.value.category] || [];
+    const category = currentTab.value.category;
+    const items = props.data[category] || [];
 
     return items.slice(0, 9);
 });
 
+const totalValue = computed(() => {
+    const items = displayItems.value;
+    return items.reduce((sum: number, item: DataItem) => sum + getItemValue(item), 0);
+});
+
 const currentCategory = computed(() => {
     return currentTab.value?.category || '';
+});
+
+const isCategoryLoading = computed(() => {
+    return props.loadingCategories?.has(currentCategory.value) || false;
+});
+
+// Preserve height when loading starts, release when done
+watch(() => isCategoryLoading.value, (isLoading) => {
+    if (isLoading && tabBody.value) {
+        // Capture current height before data changes
+        preservedHeight.value = tabBody.value.offsetHeight;
+    } else {
+        // Release preserved height when loading completes
+        preservedHeight.value = null;
+    }
 });
 
 const onItemClick = (item: DataItem) => {
@@ -190,10 +144,6 @@ const getItemLabel = (item: DataItem): string => {
     return typeof value === 'string' ? value : '';
 };
 
-const totalValue = computed(() => {
-    return tabTotals.value[currentCategory.value] ?? 0;
-});
-
 const itemPercentage = (item: DataItem): number => {
     const value = getItemValue(item);
 
@@ -224,15 +174,16 @@ const regionCodeToName = (code: string): string => {
         </div>
 
         <!-- Tab Content -->
-        <div class="flex-1 p-4 group border rounded-2xl shadow-sm mt-3" ref="tabBody">
+        <div class="flex-1 p-4 group border rounded-2xl shadow-sm mt-3" ref="tabBody" 
+            :style="{ height: preservedHeight ? `${preservedHeight}px` : 'auto' }">
             <!-- Map View -->
             <CountryMap v-if="currentCategory === 'map'" :siteId="props.siteId" :dateRange="props.dateRange"
-                :filters="props.filters" :isLoading="props.isLoading"
+                :filters="props.filters" :isLoading="isCategoryLoading" :countriesData="props.data.countries"
                 @filter="(type, value) => emit('filter', type, value)"
                 @openDetails="(category) => emit('openDetails', category)" />
             <!-- List View -->
             <div v-else>
-                <div v-if="dataLoading || isLoading" class="flex h-48 items-center justify-center">
+                <div v-if="isCategoryLoading" class="flex h-48 items-center justify-center">
                     <LoaderCircle class="h-8 w-8 animate-spin opacity-30" />
                 </div>
                 <div v-else-if="displayItems.length === 0"

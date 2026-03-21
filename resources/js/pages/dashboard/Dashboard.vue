@@ -32,6 +32,30 @@ interface Metric {
     views_per_visit: number;
 }
 
+interface MetricsWithChart extends Metric {
+    chart_data: Array<any>;
+}
+
+interface CategoryData {
+    [key: string]: any[];
+}
+
+interface DashboardData {
+    metrics?: MetricsWithChart;
+    channels?: any[];
+    sources?: any[];
+    utm_campaigns?: any[];
+    top_pages?: any[];
+    entry_pages?: any[];
+    exit_pages?: any[];
+    countries?: any[];
+    regions?: any[];
+    cities?: any[];
+    browsers?: any[];
+    operating_systems?: any[];
+    devices?: any[];
+}
+
 const props = defineProps<{
     sites: Site[];
     selectedSiteId: number | null;
@@ -46,7 +70,6 @@ const breadcrumbs: BreadcrumbItem[] = [
 
 const selectedSiteId = ref(props.selectedSiteId);
 const selectedTimeframe = ref(props.timeframe || '28_days');
-
 const urlSearchParams = useUrlSearchParams('history');
 
 const activeFilters = computed(() => {
@@ -61,15 +84,21 @@ const activeFilters = computed(() => {
 
     return filters;
 });
-const metrics = ref<Metric | null>(null);
-const chartData = ref<any[]>([]);
-const isLoading = ref(false);
+
+// Shared dashboard data
+const dashboardData = ref<DashboardData>({});
+const loadingCategories = ref<Set<string>>(new Set());
+const metricsLoading = ref(false);
 const detailModal = ref<{ open: () => void } | null>(null);
 const detailModalCategory = ref('');
 const pollingInterval = ref<number | null>(null);
 const hasZoomedChart = ref(false);
 const zoomedDateRange = ref<{ from: string; to: string } | null>(null);
 const selectedChartMetric = ref<'visitors' | 'visits' | 'pageviews' | 'bounce_rate' | 'avg_duration' | 'views_per_visit'>('visitors');
+const loadedCategories = ref<Set<string>>(new Set());
+const pendingFetches = ref<Set<string>>(new Set());
+const visibleCategories = ref<Set<string>>(new Set());
+let fetchTimeout: ReturnType<typeof setTimeout> | null = null;
 
 const timeframeOptions = [
     { label: 'Today', value: 'today' },
@@ -86,21 +115,6 @@ const timeframeOptions = [
     { label: 'All time', value: 'all_time' },
 ];
 
-const buildQueryParams = () => {
-    const params = new URLSearchParams({
-        site_id: selectedSiteId.value!.toString(),
-        date_from: dateRange.value.from,
-        date_to: dateRange.value.to,
-        timeframe: selectedTimeframe.value,
-    });
-
-    Object.entries(activeFilters.value).forEach(([key, value]) => {
-        params.append(`filter_${key}`, value);
-    });
-
-    return params;
-};
-
 const dateRange = computed(() => {
     if (hasZoomedChart.value && zoomedDateRange.value) {
         return zoomedDateRange.value;
@@ -112,6 +126,14 @@ const dateRange = computed(() => {
     };
 });
 
+const hasFilters = computed(() => Object.keys(activeFilters.value).length > 0);
+
+const metrics = computed(() => {
+    if (!dashboardData.value.metrics) return null;
+    const { chart_data, ...metricsData } = dashboardData.value.metrics;
+    return metricsData as Record<string, number>;
+});
+const chartData = computed(() => dashboardData.value.metrics?.chart_data || []);
 const unfilteredMetrics = computed(() => {
     if (!props.unfiltered_data) return null;
 
@@ -125,57 +147,85 @@ const unfilteredMetrics = computed(() => {
     };
 });
 
-const hasFilters = computed(() => Object.keys(activeFilters.value).length > 0);
-
-const fetchMetrics = async () => {
-    if (!selectedSiteId.value) {
-        return;
-    }
-
-    isLoading.value = true;
-
-    try {
-        if (!hasFilters.value && props.unfiltered_data) {
-            // Use unfiltered data from server
-            metrics.value = unfilteredMetrics.value;
-        } else {
-            // Fetch filtered data
-            const response = await fetch(`/api/dashboard/metrics?${buildQueryParams()}`);
-            metrics.value = await response.json();
-        }
-    } catch (error) {
-        console.error('Error fetching metrics:', error);
-    } finally {
-        isLoading.value = false;
-    }
-};
-
-const fetchChartData = async () => {
+const fetchCategories = async (categories: string[]) => {
     if (!selectedSiteId.value) return;
+    
+    // If no categories specified, fetch all defaults from backend
+    const toFetch = categories.length === 0 
+        ? [] 
+        : (hasFilters.value 
+            ? categories 
+            : categories.filter(cat => !loadedCategories.value.has(cat)));
+
+    // If no categories to fetch and none specified, request defaults from backend
+    if (toFetch.length === 0 && categories.length === 0) {
+        // Send empty array to backend, it will return defaults
+    } else if (toFetch.length === 0) {
+        return; // Categories already loaded
+    }
+    
+    const categoriesToSend = categories.length === 0 ? [] : toFetch;
+    categoriesToSend.forEach(cat => loadingCategories.value.add(cat));
 
     try {
-        if (!hasFilters.value && props.unfiltered_data) {
-            chartData.value = props.unfiltered_data.chart_data;
+        // Include metrics when filters are applied or when starting fresh
+        const shouldIncludeMetrics = hasFilters.value || !props.unfiltered_data;
+        
+        // Only set metrics loading if we're fetching metrics
+        if (shouldIncludeMetrics) {
+            metricsLoading.value = true;
+        }
+
+        const payload: any = {
+            site_id: selectedSiteId.value,
+            date_from: dateRange.value.from,
+            date_to: dateRange.value.to,
+            categories: categoriesToSend,
+            include_metrics: shouldIncludeMetrics,
+            filters: activeFilters.value,
+        };
+
+        const response = await fetch('/api/dashboard/aggregate', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRF-Token': (document.querySelector('meta[name="csrf-token"]') as HTMLMetaElement)?.content || '',
+            },
+            body: JSON.stringify(payload),
+        });
+
+        const data = await response.json();
+        Object.assign(dashboardData.value, data);
+        
+        // Mark categories as loaded
+        if (categories.length === 0) {
+            // When fetching defaults, mark all default categories as loaded
+            const defaultCategories = Object.keys(data).filter(key => key !== 'metrics');
+            defaultCategories.forEach(cat => loadedCategories.value.add(cat));
         } else {
-            const response = await fetch(`/api/dashboard/visitors-chart?${buildQueryParams()}`);
-            chartData.value = await response.json();
+            categoriesToSend.forEach(cat => loadedCategories.value.add(cat));
         }
     } catch (error) {
-        console.error('Error fetching chart data:', error);
+        console.error('Error fetching dashboard data:', error);
+    } finally {
+        // Remove categories from loading set
+        categoriesToSend.forEach(cat => loadingCategories.value.delete(cat));
+        // Clear metrics loading flag
+        metricsLoading.value = false;
     }
 };
 
-const refreshData = () => {
-    fetchMetrics();
-    fetchChartData();
+const refreshData = (categories?: string[]) => {
+    fetchCategories(categories || []);
 };
 
 const startPolling = () => {
     stopPolling();
 
     if (selectedTimeframe.value === 'realtime') {
-        // Poll every 10 seconds for realtime
-        pollingInterval.value = window.setInterval(refreshData, 10000);
+        pollingInterval.value = window.setInterval(() => {
+            fetchCategories(['channels', 'sources', 'utm_campaigns', 'top_pages', 'entry_pages', 'exit_pages']);
+        }, 10000);
     }
 };
 
@@ -188,6 +238,8 @@ const stopPolling = () => {
 
 const onSiteChange = (id: string) => {
     selectedSiteId.value = parseInt(id);
+    loadedCategories.value.clear();
+    dashboardData.value = {};
     router.visit(
         dashboard(),
         { data: { site_id: id, timeframe: selectedTimeframe.value } }
@@ -198,6 +250,8 @@ const onTimeframeChange = (timeframe: string) => {
     selectedTimeframe.value = timeframe;
     hasZoomedChart.value = false;
     zoomedDateRange.value = null;
+    loadedCategories.value.clear();
+    dashboardData.value = {};
     const data = { timeframe } as any;
     if (selectedSiteId.value !== props.sites[0].id) {
         data.site_id = selectedSiteId.value?.toString();
@@ -220,7 +274,6 @@ const onChartReset = () => {
     refreshData();
 };
 
-
 const onFilterApply = (filterType: string, value: string) => {
     if (value) {
         urlSearchParams[`filter_${filterType}`] = value;
@@ -228,7 +281,53 @@ const onFilterApply = (filterType: string, value: string) => {
         delete urlSearchParams[`filter_${filterType}`];
     }
 
-    refreshData();
+    // Preserve old metrics before clearing to avoid "no data available" message
+    const oldMetrics = dashboardData.value.metrics;
+    
+    // Clear cache on filter change
+    loadedCategories.value.clear();
+    dashboardData.value = {};
+    
+    // Restore old metrics to keep chart visible while fetching new data
+    if (oldMetrics) dashboardData.value.metrics = oldMetrics;
+    
+    // If all filters are now cleared and we have unfiltered data, restore it directly
+    if (Object.keys(activeFilters.value).length === 0 && props.unfiltered_data) {
+        dashboardData.value = props.unfiltered_data;
+        const defaultCategories = Object.keys(props.unfiltered_data).filter(key => key !== 'metrics');
+        defaultCategories.forEach(cat => loadedCategories.value.add(cat));
+        
+        const visibleNonDefaults = Array.from(visibleCategories.value).filter(
+            cat => !defaultCategories.includes(cat)
+        );
+        if (visibleNonDefaults.length > 0) {
+            fetchCategories(visibleNonDefaults);
+        }
+    } else {
+        // Fetch default categories plus any visible non-default categories
+        const categoriesToFetch = Array.from(visibleCategories.value);
+        fetchCategories(categoriesToFetch.length > 0 ? categoriesToFetch : []);
+    }
+};
+
+const onCategoryTabChange = (category: string) => {
+    if (category === 'map') return;
+    
+    visibleCategories.value.add(category);
+    
+    // Queue category for fetching instead of fetching immediately
+    if (!loadedCategories.value.has(category)) {
+        pendingFetches.value.add(category);
+        
+        // Debounce the actual fetch to batch multiple tabs opening at once
+        if (fetchTimeout) clearTimeout(fetchTimeout);
+        fetchTimeout = setTimeout(() => {
+            const toFetch = Array.from(pendingFetches.value);
+            pendingFetches.value.clear();
+            fetchCategories(toFetch);
+            fetchTimeout = null;
+        }, 50);
+    }
 };
 
 const onOpenDetailModal = (category: string) => {
@@ -240,14 +339,20 @@ watch(() => selectedTimeframe.value, (newValue) => {
     startPolling();
 });
 
-watch(() => props.unfiltered_data, () => {
-    if (!hasFilters.value) {
-        refreshData();
-    }
-});
-
 onMounted(() => {
-    refreshData();
+    // Initialize with unfiltered data from server if available
+    if (props.unfiltered_data) {
+        // Directly assign the data from server (all categories are now included)
+        dashboardData.value = props.unfiltered_data;
+        
+        // Mark all default categories as loaded
+        const defaultCategories = Object.keys(props.unfiltered_data).filter(key => key !== 'metrics');
+        defaultCategories.forEach(cat => loadedCategories.value.add(cat));
+    } else {
+        // Fetch default categories from backend
+        fetchCategories([]);
+    }
+    
     startPolling();
 });
 
@@ -346,7 +451,7 @@ pageTabs = [...pageTabs,
                 <div>
                     <MetricCards :metrics="metrics" :unfilteredMetrics="unfilteredMetrics"
                         v-model="selectedChartMetric" />
-                    <SummaryChart :data="chartData" :isLoading="isLoading" :metric="selectedChartMetric"
+                    <SummaryChart :data="chartData" :isLoading="metricsLoading" :metric="selectedChartMetric"
                         @zoom="onChartZoom" @filter="onFilterApply" />
                 </div>
 
@@ -367,12 +472,14 @@ pageTabs = [...pageTabs,
                             label: 'Campaigns',
                             category: 'utm_campaigns',
                         },
-                    ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" :isLoading="isLoading"
-                        @filter="onFilterApply" @open-details="onOpenDetailModal" />
+                    ]" :data="dashboardData" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" 
+                        :loadingCategories="loadingCategories" @filter="onFilterApply" @open-details="onOpenDetailModal" 
+                        @tab-change="onCategoryTabChange" />
 
                     <TabbedDataPanel title="Pages" bg-class="bg-rose-100 dark:bg-rose-900" :tabs="pageTabs"
-                        :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" :isLoading="isLoading"
-                        @filter="onFilterApply" @open-details="onOpenDetailModal" />
+                        :data="dashboardData" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" 
+                        :loadingCategories="loadingCategories" @filter="onFilterApply" @open-details="onOpenDetailModal"
+                        @tab-change="onCategoryTabChange" />
 
                     <TabbedDataPanel title="Locations" bg-class="bg-emerald-100 dark:bg-emerald-900" :tabs="[
                         {
@@ -395,8 +502,9 @@ pageTabs = [...pageTabs,
                             label: 'Cities',
                             category: 'cities',
                         },
-                    ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" :isLoading="isLoading"
-                        @filter="onFilterApply" @open-details="onOpenDetailModal" />
+                    ]" :data="dashboardData" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" 
+                        :loadingCategories="loadingCategories" @filter="onFilterApply" @open-details="onOpenDetailModal"
+                        @tab-change="onCategoryTabChange" />
 
                     <TabbedDataPanel title="Technical" :tabs="[
                         {
@@ -414,8 +522,9 @@ pageTabs = [...pageTabs,
                             label: 'Devices',
                             category: 'devices',
                         },
-                    ]" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" :isLoading="isLoading"
-                        @filter="onFilterApply" @open-details="onOpenDetailModal" />
+                    ]" :data="dashboardData" :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" 
+                        :loadingCategories="loadingCategories" @filter="onFilterApply" @open-details="onOpenDetailModal"
+                        @tab-change="onCategoryTabChange" />
                 </div>
 
                 <DetailModal ref="detailModal" :category="detailModalCategory" :siteId="selectedSiteId"
