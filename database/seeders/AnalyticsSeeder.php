@@ -27,7 +27,7 @@ class AnalyticsSeeder extends Seeder
         $site = Site::updateOrCreate(
             ['domain' => 'example.com'],
             [
-                'name' => 'Your Website',
+                'name' => 'Example Website',
                 'timezone' => 'UTC',
                 'is_public' => false,
             ]
