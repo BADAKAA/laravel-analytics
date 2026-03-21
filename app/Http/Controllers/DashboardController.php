@@ -581,6 +581,12 @@ class DashboardController extends Controller
             ->orderByDesc('visitors');
 
         $total = $data->count();
+        
+        // Get the sum of all visitors without loading all rows into memory
+        $totalVisitors = (clone $query)
+            ->whereNotNull($column)
+            ->count();
+        
         $results = match ($category) {
             'pages', 'top_pages' => $data->limit($perPage)->get(),
             default => $data->limit($perPage)->get(),
@@ -589,6 +595,7 @@ class DashboardController extends Controller
         return response()->json([
             'data' => $results,
             'total' => $total,
+            'total_visitors' => $totalVisitors,
             'has_more' => $results->count() >= $perPage,
         ]);
     }

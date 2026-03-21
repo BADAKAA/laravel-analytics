@@ -61,7 +61,7 @@ const activeFilters = computed(() => {
 const metrics = ref<Metric | null>(null);
 const chartData = ref<any[]>([]);
 const isLoading = ref(false);
-const detailModalOpen = ref(false);
+const detailModal = ref<{ open: () => void } | null>(null);
 const detailModalCategory = ref('');
 const pollingInterval = ref<number | null>(null);
 const hasZoomedChart = ref(false);
@@ -234,12 +234,7 @@ const onFilterApply = (filterType: string, value: string) => {
 
 const onOpenDetailModal = (category: string) => {
     detailModalCategory.value = category;
-    detailModalOpen.value = true;
-};
-
-const onCloseDetailModal = () => {
-    detailModalOpen.value = false;
-    detailModalCategory.value = '';
+    detailModal.value?.open();
 };
 
 watch(() => selectedTimeframe.value, (newValue) => {
@@ -484,9 +479,8 @@ pageTabs = [ ...pageTabs,
                 </div>
 
                 <!-- Detail Modal -->
-                <DetailModal v-if="detailModalOpen" :category="detailModalCategory" :isOpen="detailModalOpen"
-                    :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters"
-                    @close="onCloseDetailModal" />
+                <DetailModal ref="detailModal" :category="detailModalCategory"
+                    :siteId="selectedSiteId" :dateRange="dateRange" :filters="activeFilters" />
             </div>
         </div>
     </AppLayout>

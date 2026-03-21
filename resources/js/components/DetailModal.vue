@@ -1,12 +1,12 @@
 <script setup lang="ts">
-import { X } from 'lucide-vue-next';
-import { ref, computed, watch } from 'vue';
+import { ref, computed, watch, onMounted } from 'vue';
 import { Button } from '@/components/ui/button';
 import {
     Dialog,
     DialogContent,
     DialogHeader,
     DialogTitle,
+    DialogClose,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 
@@ -18,14 +18,9 @@ interface DetailItem {
 
 const props = defineProps<{
     category: string;
-    isOpen: boolean;
     siteId: number | null;
     dateRange: { from: string; to: string };
     filters: Record<string, string>;
-}>();
-
-const emit = defineEmits<{
-    close: [];
 }>();
 
 const items = ref<DetailItem[]>([]);
@@ -34,15 +29,30 @@ const hasMore = ref(false);
 const searchQuery = ref('');
 const cursor = ref<string | null>(null);
 const totalCount = ref(0);
+const totalVisitors = ref(0);
+const dialogOpen = ref(false);
+
+const openModal = () => {
+    dialogOpen.value = true;
+};
+
+defineExpose({
+    open: openModal,
+});
 
 const categoryTitle = computed(() => {
     const titles: Record<string, string> = {
         channels: 'Channels',
+        sources: 'Sources',
+        utm_campaigns: 'UTM Campaigns',
+        utm_campaign: 'UTM Campaigns',
         top_pages: 'Top Pages',
         pages: 'Pages',
         entry_pages: 'Entry Pages',
         exit_pages: 'Exit Pages',
         countries: 'Countries',
+        regions: 'Regions',
+        cities: 'Cities',
         browsers: 'Browsers',
         operating_systems: 'Operating Systems',
         os: 'Operating Systems',
@@ -79,8 +89,8 @@ return;
     isLoading.value = true;
 
     try {
-        const endpoint = props.category === 'top_pages' ? 'pages' : props.category;
-        const response = await fetch(`/api/dashboard/details/${endpoint}?${buildQueryParams()}`);
+        let category = props.category;
+        const response = await fetch(`/api/dashboard/details/${category}?${buildQueryParams()}`);
         const data = await response.json();
 
         if (loadMore) {
@@ -90,6 +100,7 @@ return;
         }
 
         totalCount.value = data.total;
+        totalVisitors.value = data.total_visitors ?? 0;
         hasMore.value = data.has_more;
         cursor.value = data.next_cursor || null;
     } catch (error) {
@@ -109,7 +120,7 @@ const onSearchChange = () => {
     fetchDetails();
 };
 
-watch(() => props.isOpen, (newValue) => {
+watch(() => dialogOpen.value, (newValue) => {
     if (newValue) {
         cursor.value = null;
         items.value = [];
@@ -121,17 +132,21 @@ const getItemValue = (item: DetailItem): number => {
     return item.count ?? item.visitors ?? 0;
 };
 
-const maxValue = computed(() => {
-    return Math.max(...items.value.map(getItemValue), 1);
-});
+const itemPercentage = (item: DetailItem): number => {
+    const value = getItemValue(item);
+    if (totalVisitors.value <= 0) return 0;
+    return (value / totalVisitors.value) * 100;
+};
+
 </script>
 
 <template>
-    <Dialog :open="isOpen" @openChange="(state) => !state && emit('close')">
+    <Dialog :open="dialogOpen" @update:open="dialogOpen = $event">
         <DialogContent class="max-h-screen max-w-2xl">
             <!-- Header -->
             <DialogHeader>
                 <DialogTitle>{{ categoryTitle }}</DialogTitle>
+                <DialogClose />
             </DialogHeader>
 
             <!-- Search Bar -->
@@ -153,31 +168,35 @@ const maxValue = computed(() => {
                 <div v-else-if="items.length === 0" class="flex py-8 justify-center">
                     <div class="text-gray-500">No items found</div>
                 </div>
-                <div v-else class="flex flex-col gap-3">
+                <div v-else class="flex flex-col gap-1">
                     <div
                         v-for="(item, index) in items"
                         :key="index"
-                        class="flex items-center gap-3 rounded-lg border border-sidebar-border/50 p-3 dark:border-sidebar-border/30"
+                        class="group flex cursor-pointer items-center rounded-md hover:bg-foreground/5 transition-colors pr-2"
                     >
                         <!-- Item Name -->
-                        <div class="flex-grow truncate">
-                            <p class="truncate text-sm font-medium text-gray-900 dark:text-gray-200">
+                        <div class="grow truncate relative px-2 py-1.5">
+                            <div class="w-full absolute inset-0">
+                                <div class="h-full transition-all rounded-md opacity-60 group-hover:opacity-100 bg-foreground/5"
+                                    :style="{ width: `${itemPercentage(item)}%` }" />
+                            </div>
+
+                            <p class="truncate text-sm font-medium text-gray-900 dark:text-gray-200 relative z-10">
                                 {{ item.name }}
                             </p>
                         </div>
 
-                        <!-- Value and Bar -->
+                        <!-- Value and Percentage -->
                         <div class="flex items-center gap-2">
-                            <div class="w-16 text-right">
+                            <div class="w-12 text-right">
                                 <p class="text-sm font-semibold text-gray-900 dark:text-gray-200">
                                     {{ getItemValue(item) }}
                                 </p>
                             </div>
-                            <div class="h-6 w-32 overflow-hidden rounded-full bg-gray-200 dark:bg-slate-700">
-                                <div
-                                    class="h-full bg-blue-500 transition-all"
-                                    :style="{ width: `${(getItemValue(item) / maxValue) * 100}%` }"
-                                />
+                            <div class="w-0 group-hover:w-12 text-center transition-[width] overflow-hidden">
+                                <p class="text-neutral-500 dark:text-neutral-400 text-sm">
+                                    {{ itemPercentage(item).toFixed(1) }}%
+                                </p>
                             </div>
                         </div>
                     </div>
