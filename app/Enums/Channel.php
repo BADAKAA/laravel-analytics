@@ -48,4 +48,12 @@ enum Channel: int
             self::PaidOther => 'Paid Other',
         };
     }
+
+    public static function fromLabel(string $label): ?self
+    {
+        foreach (self::cases() as $case) {
+            if ($case->label() === $label) return $case;
+        }
+        return null;
+    }
 }

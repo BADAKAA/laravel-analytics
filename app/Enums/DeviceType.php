@@ -20,4 +20,12 @@ enum DeviceType: int
             self::TV => 'TV',
         };
     }
+
+    public static function fromLabel(string $label): ?self
+    {
+        foreach (self::cases() as $case) {
+            if ($case->label() === $label) return $case;
+        }
+        return null;
+    }
 }
