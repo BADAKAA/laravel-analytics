@@ -75,7 +75,7 @@ const fetchTabData = async (category: string) => {
 
     dataLoading.value = true;
     const currentHeight = tabBody.value?.clientHeight || 0;
-    tabBody.value?.style.setProperty('height', `${Math.max(currentHeight, 300)}px`);
+    tabBody.value?.style.setProperty('height', `${Math.max(currentHeight, 200)}px`);
     try {
         let endpoint = category;
 
