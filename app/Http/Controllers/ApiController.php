@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Enums\DeviceType;
 use App\Models\Pageview;
 use App\Models\Session;
+use App\Policies\BotPolicy;
 use App\Services\ChannelClassifier;
 use App\Services\IpLocationService;
 use App\Services\VisitorHash;
@@ -19,6 +20,8 @@ class ApiController extends Controller {
     public function __invoke(Request $request): JsonResponse {
         $requestTime = microtime(true);
         $this->trackTiming = $request->header('X-Benchmark') === 'true';
+
+        if (BotPolicy::isBot($request)) return response()->json([]);
 
         $t1 = microtime(true);
         $validated = $request->validate([
