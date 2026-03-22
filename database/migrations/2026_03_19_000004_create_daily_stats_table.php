@@ -20,7 +20,7 @@ return new class extends Migration
             $table->unsignedInteger('visits')->default(0);
             $table->unsignedInteger('pageviews')->default(0);
             $table->decimal('views_per_visit', 6, 2)->nullable();
-            $table->decimal('bounce_rate', 5, 2)->nullable();
+            $table->unsignedInteger('bounce_count')->default(0);
             $table->unsignedSmallInteger('avg_duration')->nullable();
 
             $table->json('channels_agg')->nullable();

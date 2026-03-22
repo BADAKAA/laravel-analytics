@@ -8,6 +8,7 @@ use App\Models\DailyStat;
 use App\Models\Pageview;
 use App\Models\Session;
 use Carbon\Carbon;
+use Illuminate\Support\Collection;
 
 class DashboardAggregationService {
     private const TOP_X_RESULTS = 9;
@@ -19,10 +20,6 @@ class DashboardAggregationService {
         'browsers',
     ];
 
-    public function __construct(
-        private SessionFilterService $filterService
-    ) {
-    }
 
     /**
      * Central method for fetching aggregated dashboard data
@@ -71,66 +68,73 @@ class DashboardAggregationService {
         array $requestedCategories,
         bool $includeMetrics
     ): array {
-        if ($startDate->toDateString() <= now()->toDateString() && $endDate->toDateString() >= now()->toDateString()) {
+        $todayCarbon = now();
+        $today = $todayCarbon->toDateString();
+        $startDateString = $startDate->toDateString();
+        $endDateString = $endDate->toDateString();
+        $includesToday = $startDateString <= $today && $endDateString >= $today;
+
+        if ($includesToday) {
             DailyStatService::updateCurrentDay($siteId);
         }
 
-        $dailyStats = DailyStat::where('site_id', $siteId)
-            ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])
-            ->orderBy('date')
-            ->get();
+        // Keep DailyStat reads for completed days and merge current day from live sessions.
+        $historicalEndDate = $includesToday
+            ? min($endDateString, $todayCarbon->copy()->subDay()->toDateString())
+            : $endDateString;
+
+        $dailyStats = collect();
+        if ($startDateString <= $historicalEndDate) {
+            $dailyStats = DailyStat::where('site_id', $siteId)
+                ->whereDate('date', '>=', $startDateString)
+                ->whereDate('date', '<=', $historicalEndDate)
+                ->orderBy('date')
+                ->get();
+        }
 
         $response = [];
 
         if ($includeMetrics) {
-            if ($dailyStats->isEmpty()) {
-                $response['metrics'] = [
-                    'visitors' => 0,
-                    'visits' => 0,
-                    'pageviews' => 0,
-                    'bounce_rate' => 0,
-                    'avg_duration' => 0,
-                    'views_per_visit' => 0,
-                    'chart_data' => [],
-                ];
-            } else {
-                // Use database aggregation instead of PHP collection operations
-                $metrics = DailyStat::where('site_id', $siteId)
-                    ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])
-                    ->selectRaw('
-                        SUM(visitors) as total_visitors,
-                        SUM(visits) as total_visits,
-                        SUM(pageviews) as total_pageviews,
-                        AVG(avg_duration) as avg_duration,
-                        SUM(bounce_rate * visits) / SUM(visits) as weighted_bounce_rate
-                    ')
-                    ->first();
+            $visitors = (int) $dailyStats->sum('visitors');
+            $visits = (int) $dailyStats->sum('visits');
+            $pageviews = (int) $dailyStats->sum('pageviews');
+            $bounceCount = (int) $dailyStats->sum('bounce_count');
+            $totalDuration = (float) $dailyStats->sum(fn($stat) => (int) ($stat->avg_duration ?? 0) * (int) $stat->visits);
 
-                $visitors = (int) $metrics->total_visitors ?? 0;
-                $visits = (int) $metrics->total_visits ?? 0;
-                $pageviews = (int) $metrics->total_pageviews ?? 0;
-                $avgDuration = (float) $metrics->avg_duration ?? 0;
-                $bounceRate = ($visits > 0) ? round((float) $metrics->weighted_bounce_rate, 2) : 0;
-                $viewsPerVisit = ($visits > 0) ? round($pageviews / $visits, 2) : 0;
+            $chartData = $dailyStats->map(fn($stat) => [
+                'date' => $stat->date->toDateString(),
+                'visitors' => $stat->visitors,
+                'visits' => $stat->visits,
+                'pageviews' => $stat->pageviews,
+                'bounce_rate' => round($stat->bounce_rate ?? 0, 2),
+                'avg_duration' => $stat->avg_duration,
+                'views_per_visit' => $stat->visits > 0 ? round($stat->pageviews / $stat->visits, 2) : 0,
+            ])->toArray();
 
-                $response['metrics'] = [
-                    'visitors' => $visitors,
-                    'visits' => $visits,
-                    'pageviews' => $pageviews,
-                    'bounce_rate' => $bounceRate,
-                    'avg_duration' => round($avgDuration, 2),
-                    'views_per_visit' => $viewsPerVisit,
-                    'chart_data' => $dailyStats->map(fn($stat) => [
-                        'date' => $stat->date->toDateString(),
-                        'visitors' => $stat->visitors,
-                        'visits' => $stat->visits,
-                        'pageviews' => $stat->pageviews,
-                        'bounce_rate' => round($stat->bounce_rate, 2),
-                        'avg_duration' => $stat->avg_duration,
-                        'views_per_visit' => $stat->visits > 0 ? round($stat->pageviews / $stat->visits, 2) : 0,
-                    ])->toArray(),
-                ];
+            if ($includesToday) {
+                $todayMetrics = $this->calculateSessionMetrics(
+                    Session::where('site_id', $siteId)
+                        ->whereBetween('started_at', [$todayCarbon->copy()->startOfDay(), $todayCarbon->copy()->endOfDay()])
+                );
+
+                $visitors += $todayMetrics['visitors'];
+                $visits += $todayMetrics['visits'];
+                $pageviews += $todayMetrics['pageviews'];
+                $bounceCount += $todayMetrics['bounce_count'];
+                $totalDuration += $todayMetrics['total_duration'];
+                $chartData = array_merge($chartData, $todayMetrics['chart_data']);
             }
+
+            usort($chartData, fn($a, $b) => strcmp($a['date'], $b['date']));
+
+            $response['metrics'] = $this->buildMetricsResponse(
+                $visitors,
+                $visits,
+                $pageviews,
+                $bounceCount,
+                $totalDuration,
+                $chartData
+            );
         }
 
         // Add requested categories
@@ -156,13 +160,10 @@ class DashboardAggregationService {
         ];
 
         foreach ($requestedCategories as $category) {
-            if (!isset($categoryMap[$category])) {
-                continue;
-            }
+            if (!isset($categoryMap[$category])) continue;
 
             $field = $categoryMap[$category];
             $aggregations = $dailyStats->pluck($field);
-            // Apply limit BEFORE merging to reduce memory usage
             $data = $this->mergeAggregations($aggregations, self::TOP_X_RESULTS);
 
             // Apply enum formatting if needed
@@ -175,6 +176,26 @@ class DashboardAggregationService {
             }
 
             $response[$category] = $data;
+        }
+
+        if ($includesToday) {
+            $todayAggregate = $this->getAggregateFromSessions(
+                $siteId,
+                Carbon::parse($today),
+                Carbon::parse($today),
+                $requestedCategories,
+                false,
+                []
+            );
+
+            foreach ($requestedCategories as $category) {
+                if (!isset($todayAggregate[$category])) continue;
+                $response[$category] = $this->mergeNamedVisitors(
+                    $response[$category] ?? [],
+                    $todayAggregate[$category],
+                    self::TOP_X_RESULTS
+                );
+            }
         }
 
         return $response;
@@ -194,44 +215,21 @@ class DashboardAggregationService {
         $baseQuery = Session::where('site_id', $siteId)
             ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
 
-        $baseQuery = $this->applySessionFilters($baseQuery, $filters);
+        $baseQuery = SessionFilters::apply($baseQuery, $filters);
 
         $response = [];
 
         // Add metrics if requested
         if ($includeMetrics) {
-            $query = clone $baseQuery;
-            $totalVisits = (clone $query)->count();
-            $totalVisitors = (clone $query)->distinct('visitor_id')->count();
-            $bouncedSessions = (clone $query)->where('is_bounce', true)->count();
-            $totalPageviews = (clone $query)->sum('pageviews') ?? 0;
-            $avgDuration = (clone $query)->avg('duration') ?? 0;
-
-            // Chart data
-            $chartData = $query
-                ->selectRaw('DATE(started_at) as date, COUNT(*) as visits, COUNT(DISTINCT visitor_id) as visitors, SUM(pageviews) as pageviews, AVG(duration) as avg_duration, ROUND(SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END) / COUNT(*) * 100, 2) as bounce_rate')
-                ->groupBy('date')
-                ->orderBy('date')
-                ->get()
-                ->map(fn($item) => [
-                    'date' => $item->date,
-                    'visitors' => $item->visitors,
-                    'visits' => $item->visits,
-                    'pageviews' => $item->pageviews,
-                    'bounce_rate' => $item->bounce_rate ?? 0,
-                    'avg_duration' => round($item->avg_duration, 2),
-                    'views_per_visit' => $item->visits > 0 ? round($item->pageviews / $item->visits, 2) : 0,
-                ]);
-
-            $response['metrics'] = [
-                'visitors' => $totalVisitors,
-                'visits' => $totalVisits,
-                'pageviews' => $totalPageviews,
-                'bounce_rate' => $totalVisits > 0 ? round(($bouncedSessions / $totalVisits), 2) : 0,
-                'avg_duration' => round($avgDuration, 2),
-                'views_per_visit' => $totalVisits > 0 ? round($totalPageviews / $totalVisits, 2) : 0,
-                'chart_data' => $chartData->toArray(),
-            ];
+            $metrics = $this->calculateSessionMetrics($baseQuery);
+            $response['metrics'] = $this->buildMetricsResponse(
+                $metrics['visitors'],
+                $metrics['visits'],
+                $metrics['pageviews'],
+                $metrics['bounce_count'],
+                $metrics['total_duration'],
+                $metrics['chart_data']
+            );
         }
 
         // Map categories to their query methods
@@ -262,19 +260,11 @@ class DashboardAggregationService {
 
             if (isset($categoryQueryMap[$category])) {
                 $meta = $categoryQueryMap[$category];
-                $query = clone $baseQuery;
-                $data = $query
-                    ->selectRaw("{$meta['column']}, COUNT(*) as visitors")
-                    ->whereNotNull($meta['column'])
-                    ->groupBy($meta['column'])
-                    ->orderByDesc('visitors')
-                    ->limit(self::TOP_X_RESULTS)
-                    ->get()
-                    ->map(fn($item) => [
-                        'name' => $this->formatCategoryValueForAggregate($item->{$meta['column']}, $meta['column'], $meta['format_enum']),
-                        'visitors' => $item->visitors,
-                    ]);
-                $response[$category] = $data->toArray();
+                $response[$category] = $this->querySessionCategory(
+                    $baseQuery,
+                    $meta['column'],
+                    $meta['format_enum']
+                );
             }
         }
 
@@ -285,15 +275,18 @@ class DashboardAggregationService {
      * Format category value for aggregation (handles enum conversions)
      */
     private function formatCategoryValueForAggregate($value, string $column, bool $formatEnum = false): string {
-        if ($value === null) {
-            return 'Unknown';
+        if ($value === null) return 'Unknown';
+
+        if ($value instanceof \BackedEnum) {
+            $value = $value->value;
         }
 
         if ($formatEnum && $column === 'channel') {
             try {
                 return Channel::from((int) $value)->label();
             } catch (\Throwable) {
-                return "Unknown Channel {$value}";
+                $display = is_scalar($value) ? (string) $value : 'unknown';
+                return "Unknown Channel {$display}";
             }
         }
 
@@ -301,7 +294,8 @@ class DashboardAggregationService {
             try {
                 return DeviceType::from((int) $value)->label();
             } catch (\Throwable) {
-                return "Unknown Device {$value}";
+                $display = is_scalar($value) ? (string) $value : 'unknown';
+                return "Unknown Device {$display}";
             }
         }
 
@@ -351,71 +345,44 @@ class DashboardAggregationService {
         Carbon $endDate,
         array $filters
     ): array {
+        $requested = array_values(array_intersect($requestedPageCategories, self::PAGE_CATEGORIES));
+        if (empty($requested)) {
+            return [];
+        }
+
+        $requestedSet = array_fill_keys($requested, true);
+
+        $query = Pageview::where('pageviews.site_id', $siteId)
+            ->whereBetween('viewed_at', [$startDate->startOfDay(), $endDate->endOfDay()])
+            ->join('sessions', 'pageviews.session_id', '=', 'sessions.id');
+
+        $query = SessionFilters::apply($query, $filters, 'pageview');
+
+        $selectParts = ['pageviews.pathname as page'];
+        if (isset($requestedSet['top_pages'])) {
+            $selectParts[] = 'COUNT(*) as top_visitors';
+        }
+        if (isset($requestedSet['entry_pages'])) {
+            $selectParts[] = 'SUM(CASE WHEN pageviews.is_entry THEN 1 ELSE 0 END) as entry_visitors';
+        }
+        if (isset($requestedSet['exit_pages'])) {
+            $selectParts[] = 'SUM(CASE WHEN pageviews.pathname = sessions.exit_page THEN 1 ELSE 0 END) as exit_visitors';
+        }
+
+        $rows = $query
+            ->selectRaw(implode(', ', $selectParts))
+            ->groupBy('pageviews.pathname')
+            ->get();
+
         $result = [];
-
-        // Query entry pages if requested
-        if (in_array('entry_pages', $requestedPageCategories)) {
-            $query = Pageview::where('pageviews.site_id', $siteId)
-                ->whereBetween('viewed_at', [$startDate->startOfDay(), $endDate->endOfDay()])
-                ->where('is_entry', true)
-                ->join('sessions', 'pageviews.session_id', '=', 'sessions.id');
-
-            $query = $this->applySessionFilters($query, $filters, 'pageview');
-
-            $result['entry_pages'] = $query
-                ->selectRaw('pageviews.pathname as page, COUNT(*) as visitors')
-                ->groupBy('pageviews.pathname')
-                ->orderByDesc('visitors')
-                ->limit(self::TOP_X_RESULTS)
-                ->get()
-                ->map(fn($item) => [
-                    'name' => $item->page,
-                    'visitors' => $item->visitors,
-                ])
-                ->toArray();
+        if (isset($requestedSet['top_pages'])) {
+            $result['top_pages'] = $this->buildPageCategoryFromAggregatedRows($rows, 'top_visitors');
         }
-
-        // Query exit pages if requested
-        if (in_array('exit_pages', $requestedPageCategories)) {
-            $query = Pageview::where('pageviews.site_id', $siteId)
-                ->whereBetween('viewed_at', [$startDate->startOfDay(), $endDate->endOfDay()])
-                ->whereRaw('pageviews.pathname = sessions.exit_page')
-                ->join('sessions', 'pageviews.session_id', '=', 'sessions.id');
-
-            $query = $this->applySessionFilters($query, $filters, 'pageview');
-
-            $result['exit_pages'] = $query
-                ->selectRaw('pageviews.pathname as page, COUNT(*) as visitors')
-                ->groupBy('pageviews.pathname')
-                ->orderByDesc('visitors')
-                ->limit(self::TOP_X_RESULTS)
-                ->get()
-                ->map(fn($item) => [
-                    'name' => $item->page,
-                    'visitors' => $item->visitors,
-                ])
-                ->toArray();
+        if (isset($requestedSet['entry_pages'])) {
+            $result['entry_pages'] = $this->buildPageCategoryFromAggregatedRows($rows, 'entry_visitors');
         }
-
-        // Query top pages if requested (all pageviews, not just entry/exit)
-        if (in_array('top_pages', $requestedPageCategories)) {
-            $query = Pageview::where('pageviews.site_id', $siteId)
-                ->whereBetween('viewed_at', [$startDate->startOfDay(), $endDate->endOfDay()])
-                ->join('sessions', 'pageviews.session_id', '=', 'sessions.id');
-
-            $query = $this->applySessionFilters($query, $filters, 'pageview');
-
-            $result['top_pages'] = $query
-                ->selectRaw('pageviews.pathname as page, COUNT(*) as visitors')
-                ->groupBy('pageviews.pathname')
-                ->orderByDesc('visitors')
-                ->limit(self::TOP_X_RESULTS)
-                ->get()
-                ->map(fn($item) => [
-                    'name' => $item->page,
-                    'visitors' => $item->visitors,
-                ])
-                ->toArray();
+        if (isset($requestedSet['exit_pages'])) {
+            $result['exit_pages'] = $this->buildPageCategoryFromAggregatedRows($rows, 'exit_visitors');
         }
 
         return $result;
@@ -429,61 +396,165 @@ class DashboardAggregationService {
         $baseQuery,
         array $requestedPageCategories
     ): array {
+        $requested = array_values(array_intersect($requestedPageCategories, self::PAGE_CATEGORIES));
+        if (empty($requested)) {
+            return [];
+        }
+
+        $requestedSet = array_fill_keys($requested, true);
         $result = [];
 
-        if (in_array('entry_pages', $requestedPageCategories)) {
-            $query = clone $baseQuery;
-            $result['entry_pages'] = $query
-                ->selectRaw('entry_page as page, COUNT(*) as visitors')
-                ->whereNotNull('entry_page')
-                ->groupBy('entry_page')
-                ->orderByDesc('visitors')
-                ->limit(self::TOP_X_RESULTS)
-                ->get()
-                ->map(fn($item) => [
-                    'name' => $item->page,
-                    'visitors' => $item->visitors,
-                ])
-                ->toArray();
+        if (isset($requestedSet['entry_pages']) || isset($requestedSet['top_pages'])) {
+            $entryData = $this->queryPageCategoryFromSessions($baseQuery, 'entry_page');
+            if (isset($requestedSet['entry_pages'])) {
+                $result['entry_pages'] = $entryData;
+            }
+            if (isset($requestedSet['top_pages'])) {
+                $result['top_pages'] = $entryData;
+            }
         }
 
-        if (in_array('exit_pages', $requestedPageCategories)) {
-            $query = clone $baseQuery;
-            $result['exit_pages'] = $query
-                ->selectRaw('exit_page as page, COUNT(*) as visitors')
-                ->whereNotNull('exit_page')
-                ->groupBy('exit_page')
-                ->orderByDesc('visitors')
-                ->limit(self::TOP_X_RESULTS)
-                ->get()
-                ->map(fn($item) => [
-                    'name' => $item->page,
-                    'visitors' => $item->visitors,
-                ])
-                ->toArray();
-        }
-
-        if (in_array('top_pages', $requestedPageCategories)) {
-            $query = clone $baseQuery;
-            $result['top_pages'] = $query
-                ->selectRaw('entry_page as page, COUNT(*) as visitors')
-                ->whereNotNull('entry_page')
-                ->groupBy('entry_page')
-                ->orderByDesc('visitors')
-                ->limit(self::TOP_X_RESULTS)
-                ->get()
-                ->map(fn($item) => [
-                    'name' => $item->page,
-                    'visitors' => $item->visitors,
-                ])
-                ->toArray();
+        if (isset($requestedSet['exit_pages'])) {
+            $result['exit_pages'] = $this->queryPageCategoryFromSessions($baseQuery, 'exit_page');
         }
 
         return $result;
     }
 
-    public function applySessionFilters($query, array $filters, ?string $tablePrefix = null): mixed {
-        return $this->filterService->applyFilters($query, $filters, $tablePrefix);
+
+    private function calculateSessionMetrics($query): array {
+        $summary = (clone $query)
+            ->selectRaw('COUNT(*) as visits')
+            ->selectRaw('COUNT(DISTINCT visitor_id) as visitors')
+            ->selectRaw('COALESCE(SUM(pageviews), 0) as pageviews')
+            ->selectRaw('COALESCE(SUM(duration), 0) as total_duration')
+            ->selectRaw('COALESCE(SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END), 0) as bounce_count')
+            ->first();
+
+        $visits = (int) ($summary->visits ?? 0);
+        $visitors = (int) ($summary->visitors ?? 0);
+        $pageviews = (int) ($summary->pageviews ?? 0);
+        $bounceCount = (int) ($summary->bounce_count ?? 0);
+        $totalDuration = (float) ($summary->total_duration ?? 0);
+
+        $chartData = (clone $query)
+            ->selectRaw('DATE(started_at) as date, COUNT(*) as visits, COUNT(DISTINCT visitor_id) as visitors, COALESCE(SUM(pageviews), 0) as pageviews, COALESCE(SUM(duration), 0) as total_duration, COALESCE(SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END), 0) as bounce_count')
+            ->groupBy('date')
+            ->orderBy('date')
+            ->get()
+            ->map(fn($item) => [
+                'date' => $item->date,
+                'visitors' => (int) $item->visitors,
+                'visits' => (int) $item->visits,
+                'pageviews' => (int) $item->pageviews,
+                'bounce_rate' => (int) $item->visits > 0 ? round(((int) $item->bounce_count / (int) $item->visits) * 100, 2) : 0,
+                'avg_duration' => (int) $item->visits > 0 ? round((float) $item->total_duration / (int) $item->visits, 2) : 0,
+                'views_per_visit' => (int) $item->visits > 0 ? round((int) $item->pageviews / (int) $item->visits, 2) : 0,
+            ])
+            ->toArray();
+
+        return [
+            'visitors' => $visitors,
+            'visits' => $visits,
+            'pageviews' => $pageviews,
+            'bounce_count' => $bounceCount,
+            'total_duration' => $totalDuration,
+            'chart_data' => $chartData,
+        ];
+    }
+
+    private function buildMetricsResponse(
+        int $visitors,
+        int $visits,
+        int $pageviews,
+        int $bounceCount,
+        float $totalDuration,
+        array $chartData
+    ): array {
+        return [
+            'visitors' => $visitors,
+            'visits' => $visits,
+            'pageviews' => $pageviews,
+            'bounce_rate' => $visits > 0 ? round(($bounceCount / $visits) * 100, 2) : 0,
+            'avg_duration' => $visits > 0 ? round($totalDuration / $visits, 2) : 0,
+            'views_per_visit' => $visits > 0 ? round($pageviews / $visits, 2) : 0,
+            'chart_data' => $chartData,
+        ];
+    }
+
+    private function buildPageCategoryFromAggregatedRows(
+        Collection $rows,
+        string $countKey
+    ): array {
+        return $rows
+            ->map(fn($item) => [
+                'name' => $item->page,
+                'visitors' => (int) ($item->{$countKey} ?? 0),
+            ])
+            ->filter(fn($item) => $item['visitors'] > 0)
+            ->sortByDesc('visitors')
+            ->take(self::TOP_X_RESULTS)
+            ->values()
+            ->toArray();
+    }
+
+    private function querySessionCategory($baseQuery, string $column, bool $formatEnum = false): array {
+        return (clone $baseQuery)
+            ->selectRaw("{$column}, COUNT(*) as visitors")
+            ->whereNotNull($column)
+            ->groupBy($column)
+            ->orderByDesc('visitors')
+            ->limit(self::TOP_X_RESULTS)
+            ->get()
+            ->map(fn($item) => [
+                'name' => $this->formatCategoryValueForAggregate($item->{$column}, $column, $formatEnum),
+                'visitors' => $item->visitors,
+            ])
+            ->toArray();
+    }
+
+    private function queryPageCategoryFromSessions($baseQuery, string $column): array {
+        return (clone $baseQuery)
+            ->selectRaw("{$column} as page, COUNT(*) as visitors")
+            ->whereNotNull($column)
+            ->groupBy($column)
+            ->orderByDesc('visitors')
+            ->limit(self::TOP_X_RESULTS)
+            ->get()
+            ->map(fn($item) => [
+                'name' => $item->page,
+                'visitors' => $item->visitors,
+            ])
+            ->toArray();
+    }
+
+    private function mergeNamedVisitors(array $existing, array $incoming, int $limit): array {
+        $merged = [];
+
+        foreach ($existing as $item) {
+            if (!is_array($item) || !isset($item['name'])) continue;
+
+            $name = (string) $item['name'];
+            $merged[$name] = ($merged[$name] ?? 0) + (int) ($item['visitors'] ?? 0);
+        }
+
+        foreach ($incoming as $item) {
+            if (!is_array($item) || !isset($item['name'])) continue;
+            $name = (string) $item['name'];
+            $merged[$name] = ($merged[$name] ?? 0) + (int) ($item['visitors'] ?? 0);
+        }
+
+        arsort($merged);
+
+        return array_slice(
+            array_map(
+                fn($name, $count) => ['name' => $name, 'visitors' => $count],
+                array_keys($merged),
+                array_values($merged)
+            ),
+            0,
+            $limit
+        );
     }
 
     private function mergeAggregations($aggregations, ?int $limit = null) {
@@ -506,9 +577,7 @@ class DashboardAggregationService {
         $result = array_map(fn($key, $count) => ['name' => $key, 'visitors' => $count], array_keys($merged), array_values($merged));
 
         // Apply limit if specified to reduce memory usage
-        if ($limit !== null) {
-            return array_slice($result, 0, $limit);
-        }
+        if ($limit !== null) return array_slice($result, 0, $limit);
 
         return $result;
     }

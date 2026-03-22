@@ -7,7 +7,7 @@ use App\Models\Session;
 use App\Models\Site;
 use App\Services\DashboardAggregationService;
 use App\Services\GeoJsonService;
-use App\Services\SessionFilterService;
+use App\Services\SessionFilters;
 use Carbon\Carbon;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -20,7 +20,6 @@ class DashboardController extends Controller
 
     public function __construct(
         private DashboardAggregationService $aggregationService,
-        private SessionFilterService $filterService
     ) {}
 
     public function index(Request $request)
@@ -41,7 +40,9 @@ class DashboardController extends Controller
         $endDate = Carbon::now();
         $startDate = Timeframe::convert($timeframe);
         if (!$startDate) {
-            $startDate = $customStart ? Carbon::parse($customStart) : Carbon::now()->subDays(self::DEFAULT_TIMEFRAME);
+            $startDate = $customStart
+                ? Carbon::parse($customStart)
+                : (Timeframe::convert(self::DEFAULT_TIMEFRAME) ?? Carbon::now()->subDays(28));
         }
         if ($customEnd) $endDate = Carbon::parse($customEnd);
 
@@ -217,22 +218,6 @@ class DashboardController extends Controller
     }
 
     /**
-     * Parse filters from request (delegates to filter service)
-     */
-    private function parseFilters(Request $request): array
-    {
-        return $this->filterService->parseFromRequest($request);
-    }
-
-    /**
-     * Apply session filters to a query builder instance (delegates to filter service)
-     */
-    private function applySessionFilters($query, array $filters, ?string $tablePrefix = null): mixed
-    {
-        return $this->filterService->applyFilters($query, $filters, $tablePrefix);
-    }
-
-    /**
      * Build base query with date range and filters
      */
     private function buildBaseQuery(Request $request): array
@@ -241,14 +226,14 @@ class DashboardController extends Controller
         $site = Site::findOrFail($siteId);
         Gate::forUser(Auth::user())->authorize('view', $site);
 
-        $filters = $this->parseFilters($request);
+        $filters = SessionFilters::parseFromRequest($request);
         $startDate = Carbon::parse($request->query('date_from'));
         $endDate = Carbon::parse($request->query('date_to'));
 
         $query = Session::where('site_id', $siteId)
             ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
 
-        $query = $this->applySessionFilters($query, $filters);
+        $query = SessionFilters::apply($query, $filters);
 
         return [$query, $startDate, $endDate, $filters];
     }

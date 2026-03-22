@@ -5,12 +5,12 @@ namespace App\Services;
 use App\Enums\Channel;
 use App\Enums\DeviceType;
 
-class SessionFilterService
+class SessionFilters
 {
     /**
      * Apply filters to session or pageview queries with proper table prefix support
      */
-    public function applyFilters($query, array $filters, ?string $tablePrefix = null): mixed
+    public static function apply($query, array $filters, ?string $tablePrefix = null): mixed
     {
         $prefix = $tablePrefix === 'pageview' ? 'sessions.' : '';
 
@@ -56,7 +56,7 @@ class SessionFilterService
         return $query;
     }
 
-    public function parseFromRequest($request): array
+    public static function parseFromRequest($request): array
     {
         return [
             'channel' => $request->query('filter_channel'),

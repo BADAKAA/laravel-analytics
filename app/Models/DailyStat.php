@@ -12,6 +12,10 @@ class DailyStat extends Model
 
     public $timestamps = false;
 
+    protected $appends = [
+        'bounce_rate',
+    ];
+
     protected $fillable = [
         'site_id',
         'date',
@@ -19,7 +23,7 @@ class DailyStat extends Model
         'visits',
         'pageviews',
         'views_per_visit',
-        'bounce_rate',
+        'bounce_count',
         'avg_duration',
         'channels_agg',
         'referrers_agg',
@@ -44,7 +48,6 @@ class DailyStat extends Model
         return [
             'date' => 'date',
             'views_per_visit' => 'decimal:2',
-            'bounce_rate' => 'decimal:2',
             'channels_agg' => 'array',
             'referrers_agg' => 'array',
             'utm_sources_agg' => 'array',
@@ -62,6 +65,14 @@ class DailyStat extends Model
             'os_agg' => 'array',
             'devices_agg' => 'array',
         ];
+    }
+
+    public function getBounceRateAttribute(): ?float
+    {
+        $visits = (int) ($this->attributes['visits'] ?? 0);
+        if ($visits <= 0) return null;
+        $bounceCount = (int) ($this->attributes['bounce_count'] ?? 0);
+        return round(($bounceCount / $visits) * 100, 2);
     }
 
     public function site(): BelongsTo

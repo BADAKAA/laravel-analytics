@@ -201,49 +201,11 @@ class BenchmarkAggregateAnalytics extends Command
         $this->recordTiming('agg_country', $start);
 
         $start = microtime(true);
-        $browsersAgg = $sessQ()
-            ->whereNotNull('browser')
-            ->groupBy('browser', 'browser_version')
-            ->select('browser', 'browser_version', DB::raw('COUNT(*) as visits'), DB::raw('COUNT(DISTINCT visitor_id) as visitors'))
-            ->orderByDesc('visits')
-            ->get()
-            ->groupBy('browser')
-            ->map(fn ($rows, $browser) => [
-                'key' => $browser,
-                'visits' => (int) $rows->sum('visits'),
-                'visitors' => $rows->unique('visitor_id')->count(),
-                'versions' => $rows
-                    ->sortByDesc('visits')
-                    ->map(fn ($r) => ['key' => $r->browser_version, 'visits' => (int) $r->visits, 'visitors' => (int) $r->visitors])
-                    ->values()
-                    ->toArray(),
-            ])
-            ->sortByDesc('visits')
-            ->values()
-            ->toArray();
+        $browsersAgg = $agg('browser');
         $this->recordTiming('agg_browsers', $start);
 
         $start = microtime(true);
-        $osAgg = $sessQ()
-            ->whereNotNull('os')
-            ->groupBy('os', 'os_version')
-            ->select('os', 'os_version', DB::raw('COUNT(*) as visits'), DB::raw('COUNT(DISTINCT visitor_id) as visitors'))
-            ->orderByDesc('visits')
-            ->get()
-            ->groupBy('os')
-            ->map(fn ($rows, $os) => [
-                'key' => $os,
-                'visits' => (int) $rows->sum('visits'),
-                'visitors' => $rows->unique('visitor_id')->count(),
-                'versions' => $rows
-                    ->sortByDesc('visits')
-                    ->map(fn ($r) => ['key' => $r->os_version, 'visits' => (int) $r->visits, 'visitors' => (int) $r->visitors])
-                    ->values()
-                    ->toArray(),
-            ])
-            ->sortByDesc('visits')
-            ->values()
-            ->toArray();
+        $osAgg = $agg('os');
         $this->recordTiming('agg_os', $start);
 
         $start = microtime(true);
