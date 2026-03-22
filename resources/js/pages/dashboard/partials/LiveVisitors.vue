@@ -32,7 +32,7 @@ onMounted(() => {
 </script>
 
 <template>
-    <div class="flex items-center justify-center gap-2 pt-5 text-sm text-neutral-500 font-medium">
+    <div class="flex items-center justify-center gap-2 pt-5 text-sm text-neutral-500 font-medium" v-if="live_visitors">
         <Live />
         <span>
             {{ live_visitors }}
