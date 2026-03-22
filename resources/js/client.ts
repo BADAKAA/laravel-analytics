@@ -40,11 +40,11 @@ class AnalyticsClient {
   private apiEndpoint: string;
   private siteId: number | null = null;
   private lastTrackedUrl: string | null = null;
-  private visitStartedAtMs: number;
+  private visitStartedAt: number;
   private pendingTrackTimeoutId: number | null = null;
 
   constructor() {
-    this.visitStartedAtMs = Date.now();
+    this.visitStartedAt = Date.now();
     this.apiEndpoint = this.getScriptOrigin() + '/api/pageview';
 
     this.siteId = this.extractSiteId();
@@ -83,7 +83,8 @@ class AnalyticsClient {
     }) as History['replaceState'];
 
     const onNavigate = () => {
-      setTimeout(() => this.scheduleTrackPageview(), 0);
+      this.visitStartedAt = Date.now();
+      this.scheduleTrackPageview();
     };
 
     window.addEventListener('analytics:navigate', onNavigate);
@@ -97,7 +98,7 @@ class AnalyticsClient {
 
   private scheduleTrackPageview(): void {
     const minVisitMs = this.MIN_VISIT_SECONDS * 1000;
-    const elapsedMs = Date.now() - this.visitStartedAtMs;
+    const elapsedMs = Date.now() - this.visitStartedAt;
 
     if (elapsedMs >= minVisitMs) {
       this.trackPageview();
@@ -189,7 +190,6 @@ class AnalyticsClient {
 
     const payload = this.buildPayload();
     const formPayload = this.buildFormPayload(payload);
-
     // Use sendBeacon if available (more reliable for unload events)
     if (navigator.sendBeacon) {
       const queued = navigator.sendBeacon(this.apiEndpoint, formPayload);
