@@ -297,6 +297,86 @@ The country map displays visitor data overlaid on a world map using Leaflet.js a
 - **[Server-side filtering](app/Http/Controllers/DashboardController.php)** ensures only requested country features from the GeoJSON file are sent
 - **[Client-side incremental caching](resources/js/components/CountryMap.vue)** stores fetched features in IndexedDB and only requests missing countries
 
+## Example Privacy Policy Text (Analytics)
+
+The following section is a sample you can adapt for your own privacy policy when using this analytics application.
+
+> **Not legal advice**: This example is provided for informational purposes only and does not constitute legal advice. You are responsible for obtaining legal advice appropriate to your jurisdiction, industry, and data processing practices.
+
+### Suggested Privacy Policy Wording
+
+We use a self-hosted analytics tool to understand how visitors use our website and to improve our content and services.
+
+**What data we collect**
+
+When you visit our website, we may collect:
+
+- **Page and visit metadata**: page path (URL path), hostname, date/time of page view, and whether it was the first page in a visit
+- **Session analytics**: session start time, session duration, number of pages viewed in a session, entry page, and exit page
+- **Traffic source information**: referrer URL, referrer domain, campaign parameters (`utm_source`, `utm_medium`, `utm_campaign`, `utm_content`, `utm_term`), and derived marketing channel classification
+- **Device and technical information**: browser name/version, operating system/version, screen width, and derived device type (mobile/tablet/desktop)
+- **Approximate location data** (if enabled): country code, subdivision/region code, and city derived from IP geolocation
+- **Network data used for request handling**: IP address and user-agent string are processed in-memory to generate a pseudonymous visitor identifier for session detection and anti-abuse protections
+
+**Pseudonymous identifiers**
+
+We use one-way hashing and a daily rotating salt for pseudonymous visitor identifiers. This limits visitor linking to short windows and helps prevent long-term cross-day correlation.
+
+**What we do not collect through this analytics tool**
+
+- We do not use this analytics tool to intentionally collect directly identifying information such as your name, email address, or phone number.
+- We do not use this analytics tool to intentionally collect special category (sensitive) personal data.
+- We do not persist raw IP addresses or raw user-agent strings as standalone analytics identifiers.
+
+**How we use this data**
+
+We process analytics data to:
+
+- measure website performance and usage trends
+- understand which pages and campaigns are effective
+- detect technical issues and improve user experience
+- prevent abuse and maintain security of our services
+
+**Legal basis (EEA/UK): legitimate interests**
+
+Where applicable, we rely on **legitimate interests** as the legal basis for analytics processing, specifically our interest in operating, securing, and improving our website and services. We assess this interest against user rights and apply data minimization and retention controls.
+
+If local law requires consent for analytics technologies, we request consent before collecting analytics data and honor user choices.
+
+**Retention**
+
+We retain analytics data only for as long as needed for reporting, security, and operational purposes, then delete or anonymize it according to our retention schedule.
+
+Due to daily salt rotation, visitor linking is limited to a 24-hour window. After rotation, prior pseudonymous identifiers cannot be regenerated with the new salt and are effectively anonymized for future correlation.
+
+**Sharing**
+
+We do not sell analytics data. We may share analytics data with trusted service providers only as needed to host and operate our systems, subject to contractual confidentiality and data protection obligations.
+
+**Your rights**
+
+Depending on your location, you may have rights to access, correct, delete, restrict, or object to processing of personal data, and to lodge a complaint with a supervisory authority. To exercise rights, contact us using the details in this policy.
+
+**International transfers**
+
+If analytics data is transferred internationally, we implement appropriate safeguards required by applicable law.
+
+**Contact**
+
+If you have questions about this analytics processing, contact us at: `[your privacy contact email]`.
+
+---
+
+### Implementation Notes For Site Owners
+
+Before publishing your privacy policy, verify the text above against your actual configuration:
+
+- whether geolocation is enabled or disabled
+- whether pageview-level tracking is enabled
+- whether your deployment uses forwarding endpoints or third-party providers
+- your actual retention period and deletion process
+- whether consent is required in your jurisdiction
+
 ## Implementation Details
 
 ### Dashboard GeoJSON Country Map Caching
