@@ -7,6 +7,8 @@
  * 
  * Usage:
  *   <script src="https://{your-domain.com}/client.js?site_id=SITE_PUBLIC_ID"></script>
+ *   <script src="https://{your-domain.com}/client.js?site_id=SITE_PUBLIC_ID#/analytics-forward"></script>
+ *   <script src="https://{your-domain.com}/client.js?site_id=SITE_PUBLIC_ID&csrf=CSRF_TOKEN#/analytics-forward"></script>
  */
 
 type PageviewPayload = {
@@ -39,15 +41,20 @@ class AnalyticsClient {
   private MIN_VISIT_SECONDS = 2;
   private apiEndpoint: string;
   private siteId: string | null = null;
+  private csrfToken: string | null = null;
   private lastTrackedUrl: string | null = null;
   private visitStartedAt: number;
   private pendingTrackTimeoutId: number | null = null;
 
   constructor() {
     this.visitStartedAt = Date.now();
-    this.apiEndpoint = this.getScriptOrigin() + '/api/pageview';
+    this.apiEndpoint = this.getScriptOrigin() + '/api/v';
+
+    const forwardEndpoint = this.extractForwardEndpointFromHash();
+    if (forwardEndpoint) this.apiEndpoint = forwardEndpoint;
 
     this.siteId = this.extractSiteId();
+    this.csrfToken = this.extractCsrfToken();
     if (!this.siteId) {
       console.warn('site_id not found in script src, analytics disabled');
       return;
@@ -134,6 +141,43 @@ class AnalyticsClient {
     return scriptUrl.origin;
   }
 
+  private extractCsrfToken(): string | null {
+    const scriptTag = document.currentScript as HTMLScriptElement | null;
+    if (!scriptTag?.src) return null;
+
+    try {
+      const scriptUrl = new URL(scriptTag.src, window.location.href);
+      const csrf = scriptUrl.searchParams.get('csrf');
+      return csrf ? csrf : null;
+    } catch {
+      return null;
+    }
+  }
+
+  private extractForwardEndpointFromHash(): string | null {
+    const scriptTag = document.currentScript as HTMLScriptElement | null;
+    if (!scriptTag?.src) return null;
+
+    try {
+      const scriptUrl = new URL(scriptTag.src, window.location.href);
+      const hashValue = scriptUrl.hash.replace(/^#/, '').trim();
+      if (!hashValue) return null;
+
+      const candidate = `/${hashValue.replace(/^\/+/, '')}`;
+      const forwardUrl = new URL(candidate, window.location.origin);
+
+      if (forwardUrl.origin !== window.location.origin) {
+        console.warn('forward hash must resolve to same-origin endpoint, ignoring');
+        return null;
+      }
+
+      return forwardUrl.toString();
+    } catch {
+      console.warn('invalid forward hash, ignoring');
+      return null;
+    }
+  }
+
   private extractUtmParams(): Record<string, string> {
     const params = new URLSearchParams(window.location.search);
     const utm: Record<string, string> = {};
@@ -174,8 +218,18 @@ class AnalyticsClient {
     if (payload.utm_campaign) params.set('utm_campaign', payload.utm_campaign);
     if (payload.utm_content) params.set('utm_content', payload.utm_content);
     if (payload.utm_term) params.set('utm_term', payload.utm_term);
+    if (this.csrfToken) params.set('_token', this.csrfToken);
 
     return params;
+  }
+
+  private shouldUseSendBeacon(): boolean {
+    try {
+      const endpointUrl = new URL(this.apiEndpoint, window.location.href);
+      return endpointUrl.origin === window.location.origin;
+    } catch {
+      return false;
+    }
   }
 
   private trackPageview(): void {
@@ -188,8 +242,8 @@ class AnalyticsClient {
 
     const payload = this.buildPayload();
     const formPayload = this.buildFormPayload(payload);
-    // Use sendBeacon if available (more reliable for unload events)
-    if (navigator.sendBeacon) {
+    // Avoid third-party beacon requests because many blockers match $ping,3p.
+    if (navigator.sendBeacon && this.shouldUseSendBeacon()) {
       const queued = navigator.sendBeacon(this.apiEndpoint, formPayload);
       if (queued) return;
     }

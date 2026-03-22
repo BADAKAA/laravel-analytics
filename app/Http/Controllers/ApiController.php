@@ -45,7 +45,7 @@ class ApiController extends Controller {
         $this->recordTiming('site_lookup', $t2);
         if (!$siteId) return response()->json(['error' => 'Site not found'], 404);
 
-        $ip = $request->ip() ?? '';
+        $ip = $this->extractClientIp($request);
         $userAgent = $request->header('User-Agent') ?? '';
 
         $t3 = microtime(true);
@@ -181,6 +181,24 @@ class ApiController extends Controller {
             $duration = (microtime(true) - $startTime) * 1000; // ms
             $this->timings[$operation] = $duration;
         }
+    }
+
+    /**
+     * Prefer forwarded client IP when requests arrive through same-origin forwarders.
+     */
+    private function extractClientIp(Request $request): string {
+        $xForwardedFor = $request->header('X-Forwarded-For');
+        if (is_string($xForwardedFor) && $xForwardedFor !== '') {
+            $ips = array_map('trim', explode(',', $xForwardedFor));
+            foreach ($ips as $candidate) {
+                if (filter_var($candidate, FILTER_VALIDATE_IP)) {
+                    return $candidate;
+                }
+            }
+        }
+
+        $fallback = $request->ip();
+        return is_string($fallback) ? $fallback : '';
     }
 
     /**
