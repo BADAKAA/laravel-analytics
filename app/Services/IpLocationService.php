@@ -49,7 +49,7 @@ class IpLocationService {
             : rtrim($endpoint, '/') . '/' . rawurlencode($ip);
 
         try {
-            return RateLimiter::attempt(
+            $result = RateLimiter::attempt(
                 'get-ip-location',
                 $rateLimit,
                 function () use ($url): array {
@@ -58,16 +58,16 @@ class IpLocationService {
 
                     $payload = $response->json();
                     if (!is_array($payload)) return [];
+
                     if (isset($payload['status']) && strtolower((string) $payload['status']) !== 'success') return [];
 
-                    $countryCode = $payload['country_code'] ?? $payload['countryCode'] ?? null;
-                    if (!$countryCode) return [];
+                    $countryCode = $payload['countryCode'] ?? $payload['country_code'] ?? null;
+                    if ($countryCode === null || trim((string) $countryCode) === '') return [];
 
                     $country = strtoupper(trim((string) $countryCode));
-                    if ($country === '') return [];
 
-                    $regionCode = $payload['regionCode'] ?? $payload['region'] ?? null;
-                    $regionCode = $regionCode ? strtoupper(trim((string) $regionCode)) : null;
+                    $regionCode = $payload['region'] ?? $payload['regionCode'] ?? $payload['subdivision_code'] ?? null;
+                    $regionCode = $regionCode !== null ? strtoupper(trim((string) $regionCode)) : null;
                     if ($regionCode === '') $regionCode = null;
 
                     $city = $payload['city'] ?? null;
@@ -82,6 +82,8 @@ class IpLocationService {
                 },
                 60
             );
+
+            return is_array($result) ? $result : [];
         } catch (\Throwable $e) {
             return [];
         }
