@@ -131,6 +131,21 @@ Always consult with a legal professional regarding your specific compliance obli
 
 For production deployment instructions, consult the [Laravel Deployment Documentation](https://laravel.com/docs/13.x/deployment).
 
+### FTP Deployment
+
+This project includes an FTP deploy command for shared-hosting workflows:
+
+```bash
+php artisan deploy:ftp
+```
+
+Flags:
+- `--dry-run` to preview what will be uploaded
+- `--framework` to ensure required framework directories and `.gitignore` files exist before deploy *(run this only on your first deployment command)*
+- `--vendor` to explicitly include the `vendor` directory
+
+Configure FTP credentials and include/exclude paths in `config/ftp.php` and your environment variables.
+
 ### Building for Deployment
 
 If your hosting provider doesn't support Composer or Node.js, you can build the application locally and upload the compiled files:
