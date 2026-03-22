@@ -71,6 +71,10 @@ class DashboardAggregationService {
         array $requestedCategories,
         bool $includeMetrics
     ): array {
+        if ($startDate->toDateString() <= now()->toDateString() && $endDate->toDateString() >= now()->toDateString()) {
+            DailyStatService::updateCurrentDay($siteId);
+        }
+
         $dailyStats = DailyStat::where('site_id', $siteId)
             ->whereBetween('date', [$startDate->toDateString(), $endDate->toDateString()])
             ->orderBy('date')
