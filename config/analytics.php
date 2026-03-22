@@ -39,6 +39,6 @@ return [
         'enabled' => env('ANALYTICS_GEOIP_ENABLED', false),
         'use_local_db' => env('ANALYTICS_USE_LOCAL_GEOIP', false),
         'rate_limit' => env('ANALYTICS_GEOIP_RATE_LIMIT', 45),
-        'endpoint' => env('ANALYTICS_GEOIP_ENDPOINT', 'https://ip-api.com/json/{ip}?fields=countryCode,region,city,query,status'),
+        'endpoint' => env('ANALYTICS_GEOIP_ENDPOINT', 'http://ip-api.com/json/{ip}?fields=countryCode,region,city,query,status'),
     ],
 ];
