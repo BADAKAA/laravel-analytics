@@ -122,7 +122,10 @@ class DashboardAggregationService {
             if ($includesToday) {
                 $todayMetrics = $this->calculateSessionMetrics(
                     Session::where('site_id', $siteId)
-                        ->whereBetween('started_at', [$todayCarbon->copy()->startOfDay(), $todayCarbon->copy()->endOfDay()])
+                        ->whereBetween('started_at', [$todayCarbon->copy()->startOfDay(), $todayCarbon->copy()->endOfDay()]),
+                    'day',
+                    $todayCarbon->copy()->startOfDay(),
+                    $todayCarbon->copy()->endOfDay()
                 );
 
                 $visitors += $todayMetrics['visitors'];
@@ -132,6 +135,13 @@ class DashboardAggregationService {
                 $totalDuration += $todayMetrics['total_duration'];
                 $chartData = array_merge($chartData, $todayMetrics['chart_data']);
             }
+
+            $chartData = $this->fillMissingBuckets(
+                $chartData,
+                $startDate,
+                $endDate,
+                'day'
+            );
 
             usort($chartData, fn($a, $b) => strcmp($a['date'], $b['date']));
 
@@ -235,7 +245,7 @@ class DashboardAggregationService {
 
         // Add metrics if requested
         if ($includeMetrics) {
-            $metrics = $this->calculateSessionMetrics($baseQuery, $chartGranularity);
+            $metrics = $this->calculateSessionMetrics($baseQuery, $chartGranularity, $rangeStart, $rangeEnd);
             $response['metrics'] = $this->buildMetricsResponse(
                 $metrics['visitors'],
                 $metrics['visits'],
@@ -451,7 +461,12 @@ class DashboardAggregationService {
     }
 
 
-    private function calculateSessionMetrics($query, string $chartGranularity = 'day'): array {
+    private function calculateSessionMetrics(
+        $query,
+        string $chartGranularity = 'day',
+        ?Carbon $rangeStart = null,
+        ?Carbon $rangeEnd = null
+    ): array {
         $summary = (clone $query)
             ->selectRaw('COUNT(*) as visits')
             ->selectRaw('COUNT(DISTINCT visitor_id) as visitors')
@@ -466,7 +481,7 @@ class DashboardAggregationService {
         $bounceCount = (int) ($summary->bounce_count ?? 0);
         $totalDuration = (float) ($summary->total_duration ?? 0);
 
-        $chartData = $this->buildChartDataFromTimeBuckets($query, $chartGranularity);
+        $chartData = $this->buildChartDataFromTimeBuckets($query, $chartGranularity, $rangeStart, $rangeEnd);
 
         return [
             'visitors' => $visitors,
@@ -486,7 +501,12 @@ class DashboardAggregationService {
         return Timeframe::getDefaultGranularity($timeframe);
     }
 
-    private function buildChartDataFromTimeBuckets($query, string $chartGranularity): array {
+    private function buildChartDataFromTimeBuckets(
+        $query,
+        string $chartGranularity,
+        ?Carbon $rangeStart = null,
+        ?Carbon $rangeEnd = null
+    ): array {
         $granularity = in_array($chartGranularity, self::SUPPORTED_CHART_GRANULARITIES, true)
             ? $chartGranularity
             : 'day';
@@ -521,9 +541,7 @@ class DashboardAggregationService {
                 $buckets[$bucketKey]['bounce_count'] += $item->is_bounce ? 1 : 0;
             });
 
-        ksort($buckets);
-
-        return array_map(function (string $bucketDate, array $bucket): array {
+        $chartData = array_map(function (string $bucketDate, array $bucket): array {
             $bucketVisits = (int) $bucket['visits'];
             $bucketVisitors = count($bucket['visitor_ids']);
             $bucketPageviews = (int) $bucket['pageviews'];
@@ -540,6 +558,13 @@ class DashboardAggregationService {
                 'views_per_visit' => $bucketVisits > 0 ? round($bucketPageviews / $bucketVisits, 2) : 0,
             ];
         }, array_keys($buckets), array_values($buckets));
+
+        return $this->fillMissingBuckets(
+            $chartData,
+            $rangeStart,
+            $rangeEnd,
+            $granularity
+        );
     }
 
     private function toBucketKey(Carbon $startedAt, string $granularity): string {
@@ -549,6 +574,73 @@ class DashboardAggregationService {
             'week' => $startedAt->startOfWeek(Carbon::MONDAY)->toDateString(),
             'month' => $startedAt->startOfMonth()->toDateString(),
             default => $startedAt->startOfDay()->toDateString(),
+        };
+    }
+
+    private function fillMissingBuckets(
+        array $chartData,
+        ?Carbon $rangeStart,
+        ?Carbon $rangeEnd,
+        string $granularity
+    ): array {
+        if (!$rangeStart || !$rangeEnd) {
+            usort($chartData, fn($a, $b) => strcmp($a['date'], $b['date']));
+            return $chartData;
+        }
+
+        $normalizedStart = $this->normalizeBucketBoundary($rangeStart->copy(), $granularity, true);
+        $normalizedEnd = $this->normalizeBucketBoundary($rangeEnd->copy(), $granularity, false);
+
+        if ($normalizedStart->greaterThan($normalizedEnd)) {
+            return [];
+        }
+
+        $indexed = [];
+        foreach ($chartData as $point) {
+            if (!isset($point['date'])) {
+                continue;
+            }
+
+            $indexed[(string) $point['date']] = $point;
+        }
+
+        $filled = [];
+        $cursor = $normalizedStart->copy();
+        while ($cursor->lessThanOrEqualTo($normalizedEnd)) {
+            $bucketKey = $this->toBucketKey($cursor->copy(), $granularity);
+            $filled[] = $indexed[$bucketKey] ?? [
+                'date' => $bucketKey,
+                'visitors' => 0,
+                'visits' => 0,
+                'pageviews' => 0,
+                'bounce_rate' => 0,
+                'avg_duration' => 0,
+                'views_per_visit' => 0,
+            ];
+
+            $cursor = match ($granularity) {
+                'minute' => $cursor->addMinute(),
+                'hour' => $cursor->addHour(),
+                'week' => $cursor->addWeek(),
+                'month' => $cursor->addMonth(),
+                default => $cursor->addDay(),
+            };
+        }
+
+        return $filled;
+    }
+
+    private function normalizeBucketBoundary(Carbon $date, string $granularity, bool $isStart): Carbon {
+        return match ($granularity) {
+            'minute' => $isStart ? $date->startOfMinute() : $date->startOfMinute(),
+            'hour' => $isStart ? $date->startOfHour() : $date->startOfHour(),
+            'week' => $isStart
+                ? $date->startOfWeek(Carbon::MONDAY)
+                : $date->endOfWeek(Carbon::MONDAY)->startOfDay(),
+            'month' => $isStart
+                ? $date->startOfMonth()
+                : $date->endOfMonth()->startOfDay(),
+            default => $isStart ? $date->startOfDay() : $date->startOfDay(),
         };
     }
 
