@@ -49,7 +49,7 @@ class ApiController extends Controller {
         $userAgent = $request->header('User-Agent') ?? '';
 
         $t3 = microtime(true);
-        $visitorId = VisitorHash::make($ip, $userAgent, (string)$siteId);
+        $visitorId = VisitorHash::make($ip, $userAgent, $siteId);
         $this->recordTiming('visitor_hash', $t3);
 
         $t4 = microtime(true);
