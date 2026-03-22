@@ -9,6 +9,7 @@ use App\Models\DailyStat;
 use App\Models\Pageview;
 use App\Models\Session;
 use Carbon\Carbon;
+use Carbon\CarbonInterface;
 use Illuminate\Support\Collection;
 
 class DashboardAggregationService {
@@ -464,8 +465,8 @@ class DashboardAggregationService {
     private function calculateSessionMetrics(
         $query,
         string $chartGranularity = 'day',
-        ?Carbon $rangeStart = null,
-        ?Carbon $rangeEnd = null
+        ?CarbonInterface $rangeStart = null,
+        ?CarbonInterface $rangeEnd = null
     ): array {
         $summary = (clone $query)
             ->selectRaw('COUNT(*) as visits')
@@ -504,8 +505,8 @@ class DashboardAggregationService {
     private function buildChartDataFromTimeBuckets(
         $query,
         string $chartGranularity,
-        ?Carbon $rangeStart = null,
-        ?Carbon $rangeEnd = null
+        ?CarbonInterface $rangeStart = null,
+        ?CarbonInterface $rangeEnd = null
     ): array {
         $granularity = in_array($chartGranularity, self::SUPPORTED_CHART_GRANULARITIES, true)
             ? $chartGranularity
@@ -567,7 +568,7 @@ class DashboardAggregationService {
         );
     }
 
-    private function toBucketKey(Carbon $startedAt, string $granularity): string {
+    private function toBucketKey(CarbonInterface $startedAt, string $granularity): string {
         return match ($granularity) {
             'minute' => $startedAt->startOfMinute()->format('Y-m-d\\TH:i:00'),
             'hour' => $startedAt->startOfHour()->format('Y-m-d\\TH:00:00'),
@@ -579,8 +580,8 @@ class DashboardAggregationService {
 
     private function fillMissingBuckets(
         array $chartData,
-        ?Carbon $rangeStart,
-        ?Carbon $rangeEnd,
+        ?CarbonInterface $rangeStart,
+        ?CarbonInterface $rangeEnd,
         string $granularity
     ): array {
         if (!$rangeStart || !$rangeEnd) {
@@ -630,7 +631,7 @@ class DashboardAggregationService {
         return $filled;
     }
 
-    private function normalizeBucketBoundary(Carbon $date, string $granularity, bool $isStart): Carbon {
+    private function normalizeBucketBoundary(CarbonInterface $date, string $granularity, bool $isStart): CarbonInterface {
         return match ($granularity) {
             'minute' => $isStart ? $date->startOfMinute() : $date->startOfMinute(),
             'hour' => $isStart ? $date->startOfHour() : $date->startOfHour(),
