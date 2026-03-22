@@ -1,0 +1,56 @@
+{
+  "directories": [
+    {
+      "path": "storage",
+      "gitignore": "*\n!.gitignore"
+    },
+    {
+      "path": "storage/app",
+      "gitignore": "*\n!private/\n!public/\n!.gitignore"
+    },
+    {
+      "path": "storage/app/private",
+      "gitignore": "*\n!.gitignore"
+    },
+    {
+      "path": "storage/app/public",
+      "gitignore": "*\n!.gitignore"
+    },
+    {
+      "path": "storage/debugbar",
+      "gitignore": "*\n!.gitignore"
+    },
+    {
+      "path": "storage/framework",
+      "gitignore": "compiled.php\nconfig.php\ndown\nevents.scanned.php\nmaintenance.php\nroutes.php\nroutes.scanned.php\nschedule-*\nservices.json"
+    },
+    {
+      "path": "storage/framework/cache",
+      "gitignore": "*\n!data/\n!.gitignore"
+    },
+    {
+      "path": "storage/framework/cache/data",
+      "gitignore": "*\n!.gitignore"
+    },
+    {
+      "path": "storage/framework/views",
+      "gitignore": "*\n!.gitignore"
+    },
+    {
+      "path": "storage/framework/sessions",
+      "gitignore": "*\n!.gitignore"
+    },
+    {
+      "path": "storage/framework/testing",
+      "gitignore": "*\n!.gitignore"
+    },
+    {
+      "path": "storage/logs",
+      "gitignore": "*\n!.gitignore"
+    },
+    {
+      "path": "bootstrap/cache",
+      "gitignore": "*\n!.gitignore"
+    }
+  ]
+}
