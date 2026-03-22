@@ -23,7 +23,7 @@ class BenchmarkPageviewApi extends Command
     private float $totalBytes = 0;
     private array $errors = [];
     private array $operationTimings = []; // Track timings per operation
-    private int $siteId = 0; // Store site ID once
+    private string $siteId = ''; // Store site ID once
 
     public function handle(): int
     {
@@ -49,7 +49,7 @@ class BenchmarkPageviewApi extends Command
             return self::FAILURE;
         }
 
-        $this->siteId = $site->id;
+        $this->siteId = $site->public_id;
 
         $this->info("🚀 Benchmarking Pageview API");
         $this->info("────────────────────────────");

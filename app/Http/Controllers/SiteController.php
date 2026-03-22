@@ -96,17 +96,7 @@ class SiteController extends Controller
 
     private function userSites(User $user)
     {
-        return $user->sites()
-            ->withPivot('role')
-            ->select([
-                'sites.id',
-                'sites.name',
-                'sites.domain',
-                'sites.timezone',
-                'sites.is_public',
-                'sites.created_at',
-                'sites.updated_at',
-            ]);
+        return $user->sites()->withPivot('role');
     }
 
     private function validateSite(Request $request, ?Site $site = null): array
@@ -131,6 +121,7 @@ class SiteController extends Controller
 
         return [
             'id' => $site->id,
+            'public_id' => $site->public_id,
             'name' => $site->name,
             'domain' => $site->domain,
             'timezone' => $site->timezone,

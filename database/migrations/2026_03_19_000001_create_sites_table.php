@@ -13,6 +13,7 @@ return new class extends Migration
     {
         Schema::create('sites', function (Blueprint $table) {
             $table->id();
+            $table->char('public_id', 11)->unique();
             $table->string('domain', 255)->unique();
             $table->string('name', 255);
             $table->string('timezone', 50)->default('UTC');

@@ -11,7 +11,7 @@ test('POST /api/pageview creates session and pageview', function () {
 
     // Send pageview request
     $response = $this->postJson('/api/pageview', [
-        'site_id' => $site->id,
+        'site_id' => $site->public_id,
         'pathname' => '/home',
         'screen_width' => 1920,
     ]);
@@ -38,7 +38,7 @@ test('POST /api/pageview increments pageviews and updates exit page', function (
     $response1 = $this->postJson(
         '/api/pageview',
         [
-            'site_id' => $site->id,
+            'site_id' => $site->public_id,
             'pathname' => '/home',
             'screen_width' => 1920,
         ],
@@ -60,7 +60,7 @@ test('POST /api/pageview increments pageviews and updates exit page', function (
     $response2 = $this->postJson(
         '/api/pageview',
         [
-            'site_id' => $site->id,
+            'site_id' => $site->public_id,
             'pathname' => '/about',
             'screen_width' => 1920,
         ],

@@ -45,7 +45,7 @@ This webapp can be deployed on any shared hosting which can run php. See the [de
 To track analytics on your website, add a single script tag before the closing `</body>` tag:
 
 ```html
-<script src="https://{your-analytics-domain.com}/client.js?site_id=123"></script>
+<script src="https://{your-analytics-domain.com}/client.js?site_id={SITE_ID}"></script>
 ```
 
 Replace:

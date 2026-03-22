@@ -1,5 +1,6 @@
 export type SiteItem = {
     id: number;
+    public_id: string;
     name: string;
     domain: string;
     timezone: string;

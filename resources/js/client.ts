@@ -6,11 +6,11 @@
  * All session management is handled server-side.
  * 
  * Usage:
- *   <script src="https://{your-domain.com}/client.js?site_id=123"></script>
+ *   <script src="https://{your-domain.com}/client.js?site_id=SITE_PUBLIC_ID"></script>
  */
 
 type PageviewPayload = {
-  site_id: number;
+  site_id: string;
   pathname: string;
   hostname: string;
   referrer?: string;
@@ -38,7 +38,7 @@ declare global {
 class AnalyticsClient {
   private MIN_VISIT_SECONDS = 2;
   private apiEndpoint: string;
-  private siteId: number | null = null;
+  private siteId: string | null = null;
   private lastTrackedUrl: string | null = null;
   private visitStartedAt: number;
   private pendingTrackTimeoutId: number | null = null;
@@ -117,15 +117,13 @@ class AnalyticsClient {
   /**
    * Extract site_id from ?site_id= query parameter in script src
    */
-  private extractSiteId(): number | null {
+  private extractSiteId(): string | null {
     const scriptTag = document.currentScript as HTMLScriptElement | null;
     if (!scriptTag?.src) return null;
     const url = new URL(scriptTag.src);
     const siteIdParam = url.searchParams.get('site_id');
     if (!siteIdParam) return null;
-    const siteId = parseInt(siteIdParam, 10);
-    if (isNaN(siteId)) return null;
-    return siteId;
+    return siteIdParam;
   }
 
   private getScriptOrigin(): string {
