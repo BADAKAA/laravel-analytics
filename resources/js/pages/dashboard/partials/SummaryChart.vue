@@ -23,6 +23,7 @@ const props = defineProps<{
     data: ChartDataPoint[];
     isLoading?: boolean;
     metric?: MetricType;
+    granularity?: 'minute' | 'hour' | 'day' | 'week' | 'month';
 }>();
 
 const emit = defineEmits<{
@@ -41,6 +42,7 @@ watch(() => props.data, (newData) => {
 
 const chartData = computed(() => props.data || []);
 const activeMetric = computed(() => props.metric || 'visitors');
+const chartGranularity = computed(() => props.granularity || 'day');
 
 const xAccessor = (d: ChartDataPoint) => new Date(d.date).getTime();
 
@@ -87,6 +89,32 @@ const getMetricLabel = () => {
 
 const formatDateLabel = (value: number | Date | string) => {
     const date = value instanceof Date ? value : new Date(value);
+
+    if (chartGranularity.value === 'minute') {
+        return date.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+        });
+    }
+
+    if (chartGranularity.value === 'hour') {
+        return date.toLocaleString('en-US', {
+            month: 'short',
+            day: 'numeric',
+            hour: 'numeric',
+            minute: '2-digit',
+        });
+    }
+
+    if (chartGranularity.value === 'month') {
+        return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    }
+
+    if (chartGranularity.value === 'week') {
+        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
 
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
 };
@@ -159,7 +187,16 @@ const crosshairTemplate = (datum: ChartDataPoint | undefined, x: number | Date) 
                     :tick-line="false"
                     :domain-line="false"
                     :gridLine="false"
-                    :tick-format="(d: number) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })"
+                    :tick-format="(d: number) => {
+                        const date = new Date(d);
+                        if (chartGranularity === 'hour') {
+                            return date.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
+                        }
+                        if (chartGranularity === 'month') {
+                            return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+                        }
+                        return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+                    }"
                 />
                 <!-- Y Axis without label -->
                 <VisAxis type="y" :tick-line="false" :domain-line="false" />

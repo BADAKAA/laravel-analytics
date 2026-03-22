@@ -37,6 +37,13 @@ class DashboardController extends Controller
         $customStart = $request->query('date_from');
         $customEnd = $request->query('date_to');
 
+        // Get allowed granularities for the timeframe and validate the requested granularity
+        $allowedGranularities = Timeframe::getAllowedGranularities($timeframe);
+        $requestedGranularity = $request->query('granularity');
+        $granularity = (is_string($requestedGranularity) && in_array($requestedGranularity, $allowedGranularities, true))
+            ? $requestedGranularity
+            : Timeframe::getDefaultGranularity($timeframe);
+
         $endDate = Carbon::now();
         $startDate = Timeframe::convert($timeframe);
         if (!$startDate) {
@@ -49,13 +56,20 @@ class DashboardController extends Controller
         $unfilteredData = $this->aggregationService->fetchAggregateData(
             $siteId,
             $startDate,
-            $endDate
+            $endDate,
+            [],
+            true,
+            [],
+            $timeframe,
+            $granularity
         );
 
         return inertia('dashboard/Dashboard', [
             'sites' => $sites,
             'selectedSiteId' => $siteId,
             'timeframe' => $timeframe,
+            'granularity' => $granularity,
+            'timeframeGranularities' => Timeframe::getAllGranularitiesByTimeframe(),
             'dateRange' => [
                 'from' => $startDate->toDateString(),
                 'to' => $endDate->toDateString(),
@@ -91,6 +105,8 @@ class DashboardController extends Controller
      *   "site_id": 1,
      *   "date_from": "2026-01-01",
      *   "date_to": "2026-03-21",
+     *   "timeframe": "28_days",
+     *   "granularity": "day",
      *   "categories": ["channels", "sources", "countries", "browsers"],
      *   "include_metrics": true,
      *   "filters": {
@@ -105,6 +121,8 @@ class DashboardController extends Controller
             'site_id' => ['required', 'integer'],
             'date_from' => ['required', 'date'],
             'date_to' => ['required', 'date'],
+            'timeframe' => ['nullable', 'string'],
+            'granularity' => ['nullable', 'string'],
             'categories' => ['sometimes', 'array'],
             'categories.*' => ['string'],
             'include_metrics' => ['boolean'],
@@ -121,6 +139,16 @@ class DashboardController extends Controller
         $requestedCategories = $validated['categories'];
         $includeMetrics = $validated['include_metrics'] ?? false;
         $filters = $validated['filters'] ?? [];
+        $timeframe = $validated['timeframe'] ?? null;
+        $granularity = $validated['granularity'] ?? null;
+
+        // Validate granularity against allowed granularities for the timeframe
+        if ($timeframe && $granularity) {
+            $allowedGranularities = Timeframe::getAllowedGranularities($timeframe);
+            if (!in_array($granularity, $allowedGranularities, true)) {
+                $granularity = Timeframe::getDefaultGranularity($timeframe);
+            }
+        }
 
         $data = $this->aggregationService->fetchAggregateData(
             $siteId,
@@ -128,7 +156,9 @@ class DashboardController extends Controller
             $endDate,
             $requestedCategories,
             $includeMetrics,
-            $filters
+            $filters,
+            $timeframe,
+            $granularity
         );
 
         return response()->json($data);

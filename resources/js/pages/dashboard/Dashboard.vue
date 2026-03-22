@@ -34,6 +34,7 @@ interface Metric {
 
 interface MetricsWithChart extends Metric {
     chart_data: Array<any>;
+    chart_granularity?: 'hour' | 'day' | 'week' | 'month';
 }
 
 interface CategoryData {
@@ -60,6 +61,8 @@ const props = defineProps<{
     sites: Site[];
     selectedSiteId: number | null;
     timeframe: string;
+    granularity: string;
+    timeframeGranularities: Record<string, string[]>;
     dateRange: { from: string; to: string };
     unfiltered_data: any;
 }>();
@@ -70,6 +73,7 @@ const breadcrumbs: BreadcrumbItem[] = [
 
 const selectedSiteId = ref(props.selectedSiteId);
 const selectedTimeframe = ref(props.timeframe || '28_days');
+const selectedGranularity = ref(props.granularity || 'day');
 const urlSearchParams = useUrlSearchParams('history');
 
 const activeFilters = computed(() => {
@@ -115,6 +119,14 @@ const timeframeOptions = [
     { label: 'All time', value: 'all_time' },
 ];
 
+const granularityOptions = computed(() => {
+    const allowed = props.timeframeGranularities[selectedTimeframe.value] ?? ['day'];
+    return allowed.map(g => ({
+        label: g.charAt(0).toUpperCase() + g.slice(1),
+        value: g,
+    }));
+});
+
 const dateRange = computed(() => {
     if (hasZoomedChart.value && zoomedDateRange.value) {
         return zoomedDateRange.value;
@@ -130,10 +142,11 @@ const hasFilters = computed(() => Object.keys(activeFilters.value).length > 0);
 
 const metrics = computed(() => {
     if (!dashboardData.value.metrics) return null;
-    const { chart_data, ...metricsData } = dashboardData.value.metrics;
+    const { chart_data, chart_granularity, ...metricsData } = dashboardData.value.metrics;
     return metricsData as Record<string, number>;
 });
 const chartData = computed(() => dashboardData.value.metrics?.chart_data || []);
+const chartGranularity = computed(() => dashboardData.value.metrics?.chart_granularity || 'day');
 const unfilteredMetrics = computed(() => {
     if (!props.unfiltered_data) return null;
 
@@ -180,6 +193,8 @@ const fetchCategories = async (categories: string[]) => {
             site_id: selectedSiteId.value,
             date_from: dateRange.value.from,
             date_to: dateRange.value.to,
+            timeframe: selectedTimeframe.value,
+            granularity: selectedGranularity.value,
             categories: categoriesToSend,
             include_metrics: shouldIncludeMetrics,
             filters: activeFilters.value,
@@ -242,20 +257,39 @@ const onSiteChange = (id: string) => {
     dashboardData.value = {};
     router.visit(
         dashboard(),
-        { data: { site_id: id, timeframe: selectedTimeframe.value } }
+        { data: { site_id: id, timeframe: selectedTimeframe.value, granularity: selectedGranularity.value } }
     );
 };
 
 const onTimeframeChange = (timeframe: string) => {
     selectedTimeframe.value = timeframe;
+    // Reset to default granularity for new timeframe
+    selectedGranularity.value = props.timeframeGranularities[timeframe]?.[0] || 'day';
     hasZoomedChart.value = false;
     zoomedDateRange.value = null;
     loadedCategories.value.clear();
     dashboardData.value = {};
-    const data = { timeframe } as any;
+    const data = { timeframe, granularity: selectedGranularity.value } as any;
     if (selectedSiteId.value !== props.sites[0].id) {
         data.site_id = selectedSiteId.value?.toString();
     }
+    router.visit(
+        dashboard(),
+        { data: data }
+    );
+};
+
+const onGranularityChange = (granularity: string) => {
+    selectedGranularity.value = granularity;
+    hasZoomedChart.value = false;
+    zoomedDateRange.value = null;
+    loadedCategories.value.clear();
+    dashboardData.value = {};
+    const data = { granularity } as any;
+    if (selectedSiteId.value !== props.sites[0].id) {
+        data.site_id = selectedSiteId.value?.toString();
+    }
+    data.timeframe = selectedTimeframe.value;
     router.visit(
         dashboard(),
         { data: data }
@@ -339,6 +373,8 @@ watch(() => selectedTimeframe.value, (newValue) => {
     startPolling();
 });
 
+
+
 onMounted(() => {
     // Initialize with unfiltered data from server if available
     if (props.unfiltered_data) {
@@ -389,7 +425,7 @@ pageTabs = [...pageTabs,
         <div class="flex h-full flex-1 flex-col overflow-x-auto">
 
             <div class="border-b border-sidebar-border/70 p-4 dark:border-sidebar-border">
-                <div class="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                <div class="flex flex-col gap-4 md:flex-row items-start md:justify-between">
                     <div class="flex flex-wrap gap-4">
                         <div class="flex items-center gap-2">
                             <div class="grid gap-2">
@@ -423,7 +459,21 @@ pageTabs = [...pageTabs,
                         </div>
                     </div>
 
-                    <div class="flex items-center gap-2">
+                    <div class="flex flex-wrap items-center gap-4 lg:gap-2">
+                        <div class="grid gap-2 md:opacity-50 hover:opacity-100 transition-opacity duration-500" v-if="granularityOptions.length > 1">
+                            <Label for="granularity">Granularity</Label>
+                            <Select :defaultValue="selectedGranularity">
+                                <SelectTrigger class="w-40">
+                                    <SelectValue />
+                                </SelectTrigger>
+                                <SelectContent>
+                                    <SelectItem v-for="option in granularityOptions" :key="option.value"
+                                        :value="option.value" @click="onGranularityChange(option.value)">
+                                        {{ option.label }}
+                                    </SelectItem>
+                                </SelectContent>
+                            </Select>
+                        </div>
                         <div class="grid gap-2">
                             <Label for="timeframe">Timeframe</Label>
                             <Select :defaultValue="selectedTimeframe">
@@ -451,7 +501,7 @@ pageTabs = [...pageTabs,
                 <div>
                     <MetricCards :metrics="metrics" :unfilteredMetrics="unfilteredMetrics"
                         v-model="selectedChartMetric" />
-                    <SummaryChart :data="chartData" :isLoading="metricsLoading" :metric="selectedChartMetric"
+                    <SummaryChart :data="chartData" :isLoading="metricsLoading" :metric="selectedChartMetric" :granularity="chartGranularity"
                         @zoom="onChartZoom" @filter="onFilterApply" />
                 </div>
 

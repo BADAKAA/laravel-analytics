@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Enums\Channel;
 use App\Enums\DeviceType;
+use App\Enums\Timeframe;
 use App\Models\DailyStat;
 use App\Models\Pageview;
 use App\Models\Session;
@@ -13,6 +14,7 @@ use Illuminate\Support\Collection;
 class DashboardAggregationService {
     private const TOP_X_RESULTS = 9;
     private const PAGE_CATEGORIES = ['top_pages', 'entry_pages', 'exit_pages'];
+    private const SUPPORTED_CHART_GRANULARITIES = ['minute', 'hour', 'day', 'week', 'month'];
     private const DEFAULT_CATEGORIES = [
         'channels',
         'top_pages',
@@ -30,15 +32,19 @@ class DashboardAggregationService {
         Carbon $endDate,
         array $requestedCategories = [],
         bool $includeMetrics = true,
-        array $filters = []
+        array $filters = [],
+        ?string $timeframe = null,
+        ?string $granularity = null
     ): array {
         if (empty($requestedCategories)) {
             $requestedCategories = self::DEFAULT_CATEGORIES;
         }
 
         $hasFilters = !empty(array_filter($filters));
+        $chartGranularity = $granularity ?? $this->resolveChartGranularity($timeframe);
+        $useExactTimeBounds = $timeframe === 'realtime';
 
-        if (!$hasFilters) {
+        if (!$hasFilters && $chartGranularity === 'day') {
             return $this->getAggregateFromDailyStat(
                 $siteId,
                 $startDate,
@@ -54,7 +60,9 @@ class DashboardAggregationService {
             $endDate,
             $requestedCategories,
             $includeMetrics,
-            $filters
+            $filters,
+            $chartGranularity,
+            $useExactTimeBounds
         );
     }
 
@@ -133,7 +141,8 @@ class DashboardAggregationService {
                 $pageviews,
                 $bounceCount,
                 $totalDuration,
-                $chartData
+                $chartData,
+                'day'
             );
         }
 
@@ -210,10 +219,15 @@ class DashboardAggregationService {
         Carbon $endDate,
         array $requestedCategories,
         bool $includeMetrics,
-        array $filters
+        array $filters,
+        string $chartGranularity = 'day',
+        bool $useExactTimeBounds = false
     ): array {
+        $rangeStart = $useExactTimeBounds ? $startDate->copy() : $startDate->copy()->startOfDay();
+        $rangeEnd = $useExactTimeBounds ? $endDate->copy() : $endDate->copy()->endOfDay();
+
         $baseQuery = Session::where('site_id', $siteId)
-            ->whereBetween('started_at', [$startDate->startOfDay(), $endDate->endOfDay()]);
+            ->whereBetween('started_at', [$rangeStart, $rangeEnd]);
 
         $baseQuery = SessionFilters::apply($baseQuery, $filters);
 
@@ -221,14 +235,15 @@ class DashboardAggregationService {
 
         // Add metrics if requested
         if ($includeMetrics) {
-            $metrics = $this->calculateSessionMetrics($baseQuery);
+            $metrics = $this->calculateSessionMetrics($baseQuery, $chartGranularity);
             $response['metrics'] = $this->buildMetricsResponse(
                 $metrics['visitors'],
                 $metrics['visits'],
                 $metrics['pageviews'],
                 $metrics['bounce_count'],
                 $metrics['total_duration'],
-                $metrics['chart_data']
+                $metrics['chart_data'],
+                $chartGranularity
             );
         }
 
@@ -248,7 +263,15 @@ class DashboardAggregationService {
         // Collect requested page categories and query them all at once for efficiency
         $requestedPageCategories = array_filter($requestedCategories, fn($cat) => in_array($cat, self::PAGE_CATEGORIES));
         if (!empty($requestedPageCategories)) {
-            $pageData = $this->getPageCategoriesData($baseQuery, $requestedPageCategories, $siteId, $startDate, $endDate, $filters);
+            $pageData = $this->getPageCategoriesData(
+                $baseQuery,
+                $requestedPageCategories,
+                $siteId,
+                $startDate,
+                $endDate,
+                $filters,
+                $useExactTimeBounds
+            );
             $response = array_merge($response, $pageData);
         }
 
@@ -312,7 +335,8 @@ class DashboardAggregationService {
         int $siteId,
         Carbon $startDate,
         Carbon $endDate,
-        array $filters
+        array $filters,
+        bool $useExactTimeBounds = false
     ): array {
         $trackPageViews = config('analytics.track_page_views', true);
 
@@ -323,7 +347,8 @@ class DashboardAggregationService {
                 $siteId,
                 $startDate,
                 $endDate,
-                $filters
+                $filters,
+                $useExactTimeBounds
             );
         }
 
@@ -343,7 +368,8 @@ class DashboardAggregationService {
         int $siteId,
         Carbon $startDate,
         Carbon $endDate,
-        array $filters
+        array $filters,
+        bool $useExactTimeBounds = false
     ): array {
         $requested = array_values(array_intersect($requestedPageCategories, self::PAGE_CATEGORIES));
         if (empty($requested)) {
@@ -352,8 +378,11 @@ class DashboardAggregationService {
 
         $requestedSet = array_fill_keys($requested, true);
 
+        $rangeStart = $useExactTimeBounds ? $startDate->copy() : $startDate->copy()->startOfDay();
+        $rangeEnd = $useExactTimeBounds ? $endDate->copy() : $endDate->copy()->endOfDay();
+
         $query = Pageview::where('pageviews.site_id', $siteId)
-            ->whereBetween('viewed_at', [$startDate->startOfDay(), $endDate->endOfDay()])
+            ->whereBetween('viewed_at', [$rangeStart, $rangeEnd])
             ->join('sessions', 'pageviews.session_id', '=', 'sessions.id');
 
         $query = SessionFilters::apply($query, $filters, 'pageview');
@@ -422,7 +451,7 @@ class DashboardAggregationService {
     }
 
 
-    private function calculateSessionMetrics($query): array {
+    private function calculateSessionMetrics($query, string $chartGranularity = 'day'): array {
         $summary = (clone $query)
             ->selectRaw('COUNT(*) as visits')
             ->selectRaw('COUNT(DISTINCT visitor_id) as visitors')
@@ -437,21 +466,7 @@ class DashboardAggregationService {
         $bounceCount = (int) ($summary->bounce_count ?? 0);
         $totalDuration = (float) ($summary->total_duration ?? 0);
 
-        $chartData = (clone $query)
-            ->selectRaw('DATE(started_at) as date, COUNT(*) as visits, COUNT(DISTINCT visitor_id) as visitors, COALESCE(SUM(pageviews), 0) as pageviews, COALESCE(SUM(duration), 0) as total_duration, COALESCE(SUM(CASE WHEN is_bounce THEN 1 ELSE 0 END), 0) as bounce_count')
-            ->groupBy('date')
-            ->orderBy('date')
-            ->get()
-            ->map(fn($item) => [
-                'date' => $item->date,
-                'visitors' => (int) $item->visitors,
-                'visits' => (int) $item->visits,
-                'pageviews' => (int) $item->pageviews,
-                'bounce_rate' => (int) $item->visits > 0 ? round(((int) $item->bounce_count / (int) $item->visits) * 100, 2) : 0,
-                'avg_duration' => (int) $item->visits > 0 ? round((float) $item->total_duration / (int) $item->visits, 2) : 0,
-                'views_per_visit' => (int) $item->visits > 0 ? round((int) $item->pageviews / (int) $item->visits, 2) : 0,
-            ])
-            ->toArray();
+        $chartData = $this->buildChartDataFromTimeBuckets($query, $chartGranularity);
 
         return [
             'visitors' => $visitors,
@@ -463,13 +478,88 @@ class DashboardAggregationService {
         ];
     }
 
+    private function resolveChartGranularity(?string $timeframe): string {
+        if (!is_string($timeframe) || $timeframe === '') {
+            return 'day';
+        }
+
+        return Timeframe::getDefaultGranularity($timeframe);
+    }
+
+    private function buildChartDataFromTimeBuckets($query, string $chartGranularity): array {
+        $granularity = in_array($chartGranularity, self::SUPPORTED_CHART_GRANULARITIES, true)
+            ? $chartGranularity
+            : 'day';
+
+        $buckets = [];
+
+        (clone $query)
+            ->select(['started_at', 'visitor_id', 'pageviews', 'duration', 'is_bounce'])
+            ->orderBy('started_at')
+            ->cursor()
+            ->each(function ($item) use (&$buckets, $granularity): void {
+                $startedAt = $item->started_at instanceof Carbon
+                    ? $item->started_at->copy()
+                    : Carbon::parse($item->started_at);
+
+                $bucketKey = $this->toBucketKey($startedAt, $granularity);
+
+                if (!isset($buckets[$bucketKey])) {
+                    $buckets[$bucketKey] = [
+                        'visits' => 0,
+                        'visitor_ids' => [],
+                        'pageviews' => 0,
+                        'total_duration' => 0.0,
+                        'bounce_count' => 0,
+                    ];
+                }
+
+                $buckets[$bucketKey]['visits']++;
+                $buckets[$bucketKey]['visitor_ids'][(string) $item->visitor_id] = true;
+                $buckets[$bucketKey]['pageviews'] += (int) ($item->pageviews ?? 0);
+                $buckets[$bucketKey]['total_duration'] += (float) ($item->duration ?? 0);
+                $buckets[$bucketKey]['bounce_count'] += $item->is_bounce ? 1 : 0;
+            });
+
+        ksort($buckets);
+
+        return array_map(function (string $bucketDate, array $bucket): array {
+            $bucketVisits = (int) $bucket['visits'];
+            $bucketVisitors = count($bucket['visitor_ids']);
+            $bucketPageviews = (int) $bucket['pageviews'];
+            $bucketDuration = (float) $bucket['total_duration'];
+            $bucketBounceCount = (int) $bucket['bounce_count'];
+
+            return [
+                'date' => $bucketDate,
+                'visitors' => $bucketVisitors,
+                'visits' => $bucketVisits,
+                'pageviews' => $bucketPageviews,
+                'bounce_rate' => $bucketVisits > 0 ? round(($bucketBounceCount / $bucketVisits) * 100, 2) : 0,
+                'avg_duration' => $bucketVisits > 0 ? round($bucketDuration / $bucketVisits, 2) : 0,
+                'views_per_visit' => $bucketVisits > 0 ? round($bucketPageviews / $bucketVisits, 2) : 0,
+            ];
+        }, array_keys($buckets), array_values($buckets));
+    }
+
+    private function toBucketKey(Carbon $startedAt, string $granularity): string {
+        return match ($granularity) {
+            'minute' => $startedAt->startOfMinute()->format('Y-m-d\\TH:i:00'),
+            'hour' => $startedAt->startOfHour()->format('Y-m-d\\TH:00:00'),
+            'week' => $startedAt->startOfWeek(Carbon::MONDAY)->toDateString(),
+            'month' => $startedAt->startOfMonth()->toDateString(),
+            default => $startedAt->startOfDay()->toDateString(),
+        };
+    }
+
     private function buildMetricsResponse(
         int $visitors,
         int $visits,
         int $pageviews,
         int $bounceCount,
         float $totalDuration,
-        array $chartData
+        array $chartData,
+        string $chartGranularity = 'day'
     ): array {
         return [
             'visitors' => $visitors,
@@ -479,6 +569,7 @@ class DashboardAggregationService {
             'avg_duration' => $visits > 0 ? round($totalDuration / $visits, 2) : 0,
             'views_per_visit' => $visits > 0 ? round($pageviews / $visits, 2) : 0,
             'chart_data' => $chartData,
+            'chart_granularity' => $chartGranularity,
         ];
     }
 
