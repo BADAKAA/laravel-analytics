@@ -40,6 +40,7 @@ declare global {
 class AnalyticsClient {
   private MIN_VISIT_SECONDS = 2;
   private apiEndpoint: string;
+  private targetEndpoint: string;
   private siteId: string | null = null;
   private csrfToken: string | null = null;
   private lastTrackedUrl: string | null = null;
@@ -48,7 +49,8 @@ class AnalyticsClient {
 
   constructor() {
     this.visitStartedAt = Date.now();
-    this.apiEndpoint = this.getScriptOrigin() + '/api/v';
+    this.targetEndpoint = this.getScriptOrigin() + '/api/v';
+    this.apiEndpoint = this.targetEndpoint;
 
     const forwardEndpoint = this.extractForwardEndpointFromHash();
     if (forwardEndpoint) this.apiEndpoint = forwardEndpoint;
@@ -210,6 +212,7 @@ class AnalyticsClient {
     params.set('site_id', String(payload.site_id));
     params.set('pathname', payload.pathname);
     params.set('hostname', payload.hostname);
+    params.set('target_endpoint', this.targetEndpoint);
     params.set('screen_width', String(payload.screen_width));
 
     if (payload.referrer) params.set('referrer', payload.referrer);
@@ -239,7 +242,7 @@ class AnalyticsClient {
     if (this.lastTrackedUrl === currentUrl) return;
 
     this.lastTrackedUrl = currentUrl;
-
+    
     const payload = this.buildPayload();
     const formPayload = this.buildFormPayload(payload);
     // Avoid third-party beacon requests because many blockers match $ping,3p.

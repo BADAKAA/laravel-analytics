@@ -104,14 +104,20 @@ Example PHP forward handler:
 ```php
 <?php
 
-function forwardAnalyticsRequest(string $targetEndpoint): void
+function forwardAnalyticsRequest(): void
 {
    if (($_SERVER['REQUEST_METHOD'] ?? 'GET') !== 'POST') {
       http_response_code(405);
       return;
    }
 
-   $ch = curl_init($targetEndpoint);
+   $target = isset($_POST['target_endpoint']) ? (string) $_POST['target_endpoint'] : '';
+   if ($target === '') {
+      http_response_code(400);
+      return;
+   }
+
+   $ch = curl_init($target);
    curl_setopt_array($ch, [
       CURLOPT_POST => true,
       CURLOPT_POSTFIELDS => http_build_query($_POST),
@@ -132,7 +138,7 @@ function forwardAnalyticsRequest(string $targetEndpoint): void
    http_response_code($httpCode >= 200 && $httpCode < 500 ? 204 : 202);
 }
 
-forwardAnalyticsRequest('https://{your-analytics-domain.com}/api/v');
+forwardAnalyticsRequest();
 ```
 
 This forwarder intentionally does not re-validate analytics fields; validation remains centralized on the receiving analytics server.
