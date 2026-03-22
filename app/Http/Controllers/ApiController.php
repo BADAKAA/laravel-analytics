@@ -79,7 +79,8 @@ class ApiController extends Controller {
         
         $isNewSession = !$existingSession;
         if ($existingSession) {
-            $sessionDuration = $now->diffInSeconds($existingSession->started_at);
+            $startedAt = $existingSession->started_at;
+            $sessionDuration = (int) $startedAt->diffInSeconds($now, true);
             if ($sessionDuration > $maxSessionDuration) {
                 $isNewSession = true;
             }
@@ -128,9 +129,12 @@ class ApiController extends Controller {
                 ]);
             } else {
                 // Update the existing session
+                $durationSigned = (float) $existingSession->started_at->diffInSeconds($now, false);
+                $durationSeconds = (int) max(0, $durationSigned);
                 $existingSession->update([
                     'pageviews' => $existingSession->pageviews + 1,
                     'exit_page' => $validated['pathname'],
+                    'duration' => $durationSeconds,
                     'is_bounce' => false,
                 ]);
                 $session = $existingSession;
