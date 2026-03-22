@@ -161,6 +161,24 @@ class AnalyticsClient {
     };
   }
 
+  private buildFormPayload(payload: PageviewPayload): URLSearchParams {
+    const params = new URLSearchParams();
+
+    params.set('site_id', String(payload.site_id));
+    params.set('pathname', payload.pathname);
+    params.set('hostname', payload.hostname);
+    params.set('screen_width', String(payload.screen_width));
+
+    if (payload.referrer) params.set('referrer', payload.referrer);
+    if (payload.utm_source) params.set('utm_source', payload.utm_source);
+    if (payload.utm_medium) params.set('utm_medium', payload.utm_medium);
+    if (payload.utm_campaign) params.set('utm_campaign', payload.utm_campaign);
+    if (payload.utm_content) params.set('utm_content', payload.utm_content);
+    if (payload.utm_term) params.set('utm_term', payload.utm_term);
+
+    return params;
+  }
+
   private trackPageview(): void {
     if (!this.siteId) return;
 
@@ -170,19 +188,18 @@ class AnalyticsClient {
     this.lastTrackedUrl = currentUrl;
 
     const payload = this.buildPayload();
+    const formPayload = this.buildFormPayload(payload);
 
     // Use sendBeacon if available (more reliable for unload events)
     if (navigator.sendBeacon) {
-      navigator.sendBeacon(this.apiEndpoint, JSON.stringify(payload));
-      return;
+      const queued = navigator.sendBeacon(this.apiEndpoint, formPayload);
+      if (queued) return;
     }
+
     // Fallback to fetch with keepalive
     fetch(this.apiEndpoint, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(payload),
+      body: formPayload,
       keepalive: true,
     }).catch(() => {
       // Silently fail
